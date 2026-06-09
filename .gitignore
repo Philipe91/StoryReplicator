@@ -1,0 +1,42 @@
+# ── Python ──────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+env/
+*.egg-info/
+
+# ── Saídas geradas pelo pipeline ──────────────────────────────────────────────
+output/
+*.mp4
+*.wav
+*.mp3
+
+# ── Caches ──────────────────────────────────────────────────────────────────
+cache/
+**/cache/
+
+# ── Remotion / Node ───────────────────────────────────────────────────────────
+remotion_renderer/node_modules/
+remotion_renderer/out/
+remotion_renderer/public/assets/
+remotion_renderer/public/*.json
+remotion_renderer/public/*.wav
+remotion_renderer/public/*.srt
+remotion_renderer/public/*.ass
+remotion_renderer/.remotion/
+
+# ── Scripts de teste temporários ──────────────────────────────────────────────
+run_acquisition.py
+assemble_video.py
+
+# ── Sistema ───────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+*.log
+
+# ── Segredos ──────────────────────────────────────────────────────────────────
+.env
+*.key
+output_test_data.json

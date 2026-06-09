@@ -1,0 +1,32 @@
+# ── Core AI ────────────────────────────────────────────────────────────────────
+anthropic>=0.40.0
+
+# ── YouTube extraction ─────────────────────────────────────────────────────────
+yt-dlp>=2024.1.0
+youtube-transcript-api>=0.6.0
+
+# ── Image acquisition ──────────────────────────────────────────────────────────
+requests>=2.31.0
+Pillow>=10.0.0          # conversão de imagem para JPEG (opcional mas recomendado)
+
+# ── TTS — instale UM dos backends:
+# Opção A (recomendada — local, sem internet, ~350MB de modelo):
+kokoro-onnx>=0.4.0
+# Opção B (alternativa PyPI):
+# kokoro>=0.9.4
+
+# Fallback TTS online gratuito (Microsoft Azure via Edge):
+edge-tts>=6.1.0
+
+# ── Audio ──────────────────────────────────────────────────────────────────────
+numpy>=1.24.0
+soundfile>=0.12.1
+
+# ── Já instalados no seu ambiente (não reinstalar):
+# onnxruntime>=1.23.2   ✅ 1.23.2 detectado
+# yt-dlp               ✅ 2026.3.17 detectado
+# numpy                ✅ 2.2.6 detectado
+
+# ── FFmpeg: binário externo, instalar separadamente ───────────────────────────
+# Windows: https://www.gyan.dev/ffmpeg/builds/  (ffmpeg-release-essentials.zip)
+# Descompactar e adicionar bin/ ao PATH do sistema

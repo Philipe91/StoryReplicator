@@ -1,0 +1,419 @@
+#!/usr/bin/env python3
+"""
+StoryReplicator v3.5 — Remotion + Editor AI + Documentários profissionais.
+
+Uso:
+  python main.py <url> [--mode micro|short|documentary|epic]
+                        [--renderer remotion|ffmpeg]
+                        [--skip-video] [--skip-images]
+
+Modos:
+  micro        60s   — TikTok / Shorts rápido
+  short       120s   — YouTube Shorts / Reels
+  documentary 180s   — Documentário (PADRÃO)
+  epic        360s   — Narrativa épica completa
+
+Renderizadores:
+  remotion    Remotion (React) — qualidade premium, requer Node.js (PADRÃO)
+  ffmpeg      FFmpeg — compatibilidade máxima, fallback automático
+"""
+
+import argparse
+import json
+import os
+import time
+from pathlib import Path
+
+if not os.getenv("ANTHROPIC_API_KEY"):
+    print("[AVISO] ANTHROPIC_API_KEY não definida.")
+    print("  Etapas de IA (análise, roteiro, narração) serão ignoradas.")
+    print("  Para uso completo: set ANTHROPIC_API_KEY=sk-ant-...")
+    print()
+
+from config import OUTPUT_DIR, get_mode
+from modules.extractor              import extract
+from modules.analyzer               import analyze
+from modules.story_generator        import generate_story
+from modules.script_writer          import write_script
+from modules.narration_writer       import write_narration
+from modules.storyboard_generator   import generate_storyboard
+from modules.scene_analyzer         import analyze_all_scenes
+from modules.editor_ai              import analyze as editor_ai_analyze, save as editor_ai_save   # v3.5
+from modules.image_acquisition_engine import ImageAcquisitionEngine, save_acquisition_reports
+from modules.video_acquisition      import VideoAcquisitionEngine
+from modules.visual_prompts         import generate_visual_prompts, export_prompts_txt
+from modules.timeline_builder       import build_timeline
+from modules.subtitle_engine        import synthesize_with_subtitles, save_subtitles_json         # v3.5
+from modules.render_auditor         import audit_and_fix
+from modules.video_assembler        import assemble as ffmpeg_assemble
+from modules.publisher_metadata     import generate_metadata
+from modules.quality_reporter       import generate as generate_quality_report
+import modules.remotion_bridge      as remotion_bridge                                            # v3.5
+
+
+# ─── Helpers ──────────────────────────────────────────────────────────────────
+
+def _banner(mode_config: dict):
+    print("\n" + "="*64)
+    print("  StoryReplicator v3.0  —  Histórias Reais Inacreditáveis")
+    print(f"  Modo: {mode_config['label']} | {mode_config['target_words']} palavras-alvo")
+    print("="*64 + "\n")
+
+
+def _step(n: int, label: str):
+    print(f"\n[ETAPA {n:02d}] {label}")
+    print("-" * 54)
+
+
+def _save(data: dict, path: Path):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    print(f"  Salvo: {path.name}")
+
+
+def _slug(url: str) -> str:
+    import re
+    return re.sub(r"[^a-zA-Z0-9]", "_", url)[:40] + f"_{int(time.time())}"
+
+
+def _fmt(n: int) -> str:
+    if n > 1_048_576: return f"{n/1_048_576:.1f}MB"
+    if n > 1024:      return f"{n/1024:.0f}KB"
+    return f"{n}B"
+
+
+def _get_ffmpeg() -> str:
+    """Retorna caminho do FFmpeg (PATH ou imageio_ffmpeg)."""
+    import shutil
+    if shutil.which("ffmpeg"):
+        return "ffmpeg"
+    try:
+        import imageio_ffmpeg
+        return imageio_ffmpeg.get_ffmpeg_exe()
+    except ImportError:
+        return "ffmpeg"
+
+
+# ─── Pipeline principal ───────────────────────────────────────────────────────
+
+def run(
+    url: str,
+    mode_name: str = "documentary",
+    renderer: str = "remotion",
+    skip_video: bool = False,
+    skip_images: bool = False,
+    skip_video_search: bool = False,
+    output_dir: Path = None,
+) -> Path:
+
+    mode    = get_mode(mode_name)
+    ffmpeg  = _get_ffmpeg()
+    _banner(mode)
+    t0 = time.time()
+
+    out    = Path(output_dir) if output_dir else OUTPUT_DIR / _slug(url)
+    assets = out / "assets"
+    out.mkdir(parents=True, exist_ok=True)
+    assets.mkdir(parents=True, exist_ok=True)
+
+    print(f"  URL:    {url}")
+    print(f"  Output: {out}")
+    print(f"  FFmpeg: {ffmpeg}")
+
+    # ── ETAPA 01: Extração ────────────────────────────────────────────────────
+    _step(1, "Extração de dados do YouTube")
+    video = extract(url)
+    print(f"  Título:     {video.title}")
+    print(f"  Duração:    {video.duration}s  |  Views: {video.view_count:,}")
+    _save(vars(video), out / "01_video_data.json")
+
+    # ── ETAPA 02: Análise narrativa ───────────────────────────────────────────
+    _step(2, "Análise da estrutura narrativa")
+    analysis = analyze(video)
+    print(f"  Tema:  {analysis.get('tema_central','?')[:60]}")
+    _save(analysis, out / "02_analysis.json")
+
+    # ── ETAPA 03: Nova história ───────────────────────────────────────────────
+    _step(3, "Nova história original")
+    story = generate_story(analysis)
+    print(f"  Título:  {story.get('titulo','?')}")
+    print(f"  Logline: {str(story.get('logline','?'))[:70]}")
+    _save(story, out / "03_story.json")
+
+    # ── ETAPA 04: Roteiro ─────────────────────────────────────────────────────
+    _step(4, f"Roteiro profissional — {mode['label']}")
+    script = write_script(story, mode)
+    print(f"  Segmentos: {len(script.get('segmentos',[]))}")
+    _save(script, out / "04_script.json")
+
+    # ── ETAPA 05: Narração ────────────────────────────────────────────────────
+    _step(5, f"Narração TTS — alvo {mode['target_words']} palavras")
+    narration = write_narration(script, mode)
+    total_w   = sum(s.get("word_count", 0) for s in narration.get("segments", []))
+    print(f"  Palavras: {total_w}  |  Preview: {narration.get('narration_full','')[:80]}...")
+    _save(narration, out / "05_narration.json")
+
+    # ── ETAPA 06: Storyboard granular ─────────────────────────────────────────
+    _step(6, "Storyboard (cenas ~4s + emoção)")
+    storyboard = generate_storyboard(narration, story, mode)
+    print(f"  Cenas: {storyboard.get('total_cenas', 0)}  "
+          f"(intervalo alvo: {mode.get('scene_interval',4)}s)")
+    _save(storyboard, out / "06_storyboard.json")
+
+    # ── ETAPA 07: Scene Analyzer — P1 ─────────────────────────────────────────
+    _step(7, "Análise estruturada de cenas (P1)")
+    scene_contexts = analyze_all_scenes(storyboard, story)
+    print(f"  Contextos extraídos: {len(scene_contexts)}")
+    ctx_data = {cid: vars(ctx) for cid, ctx in scene_contexts.items()}
+    _save(ctx_data, out / "07_scene_contexts.json")
+
+    # ── ETAPA 07b: Editor AI — v3.5 ───────────────────────────────────────────
+    _step(7, "Editor AI — decisões cinematográficas por cena (v3.5)")
+    edit_decisions = editor_ai_analyze(storyboard, story)
+    editor_ai_save(edit_decisions, out)
+    broll_needed = sum(1 for d in edit_decisions if d.broll_needed)
+    styles_used  = sorted({d.subtitle_style for d in edit_decisions})
+    print(f"  Decisões:      {len(edit_decisions)} cenas")
+    print(f"  B-roll marcado:{broll_needed} cenas")
+    print(f"  Estilos legenda:{', '.join(styles_used)}")
+
+    # ── ETAPA 08: Image Acquisition — P1+P2 ──────────────────────────────────
+    image_assignments = {}
+    if not skip_images:
+        _step(8, "Image Acquisition Engine (busca histórica automática)")
+        engine     = ImageAcquisitionEngine(output_dir=out)
+        tmp_tl     = {"scenes": [
+            {"scene_id": c["cena_id"], "image_file": f"assets/image_{c['cena_id']:02d}.jpg"}
+            for c in storyboard.get("cenas", [])
+        ]}
+        _, acq_result = engine.run(storyboard, story, tmp_tl, scene_contexts=scene_contexts)
+        save_acquisition_reports(acq_result, out)
+        image_assignments = {
+            cid: a["local_path"]
+            for cid, a in acq_result.get("assignments", {}).items()
+            if a["status"] == "found"
+        }
+        print(f"\n  {acq_result['found']}/{acq_result['total_scenes']} imagens "
+              f"({acq_result['success_rate']}%)  "
+              f"Fontes: {', '.join(acq_result.get('sources_used', []))}")
+    else:
+        print("\n[ETAPA 08] Aquisição de imagens ignorada (--skip-images)")
+        acq_result = {"found": 0, "total_scenes": 0, "missing": 0,
+                       "success_rate": 0, "sources_used": [], "assignments": {}}
+
+    # ── ETAPA 09: Video Acquisition — P4 ──────────────────────────────────────
+    video_assignments = {}
+    if not skip_images and not skip_video_search:
+        _step(9, "Busca de vídeos históricos (P4)")
+        vid_engine = VideoAcquisitionEngine(output_dir=out)
+        found_vids = 0
+        for cid, ctx in scene_contexts.items():
+            kw = {
+                "search_queries": ctx.search_queries[:2],
+                "period":         ctx.period,
+                "subjects":       [ctx.main_object, ctx.character],
+            }
+            # Busca apenas para cenas de alta relevância (conflito/escalada)
+            seg = next((c.get("segmento","") for c in storyboard.get("cenas",[])
+                        if c["cena_id"] == cid), "")
+            if seg in ("conflito", "escalada", "plot_twist"):
+                asset = vid_engine.search_for_scene(kw, cid, max_duration=8.0)
+                if asset:
+                    video_assignments[cid] = asset.local_path
+                    found_vids += 1
+        print(f"  Vídeos históricos encontrados: {found_vids}")
+    else:
+        print("\n[ETAPA 09] Busca de vídeos ignorada")
+
+    # ── ETAPA 10: Visual Prompts (fallback manual) ────────────────────────────
+    _step(10, "Prompts visuais para imagens faltantes")
+    visual_prompts = generate_visual_prompts(storyboard)
+    print(f"  Prompts: {len(visual_prompts.get('prompts', []))}")
+    _save(visual_prompts, out / "10_visual_prompts.json")
+    export_prompts_txt(visual_prompts, str(out / "10_image_prompts.txt"))
+
+    # ── ETAPA 11: Timeline JSON ───────────────────────────────────────────────
+    _step(11, "Timeline JSON")
+    timeline = build_timeline(
+        storyboard, narration, visual_prompts, mode,
+        image_assignments, video_assignments,
+    )
+    print(f"  Cenas: {len(timeline.get('scenes', []))}  |  "
+          f"Duração: {timeline['total_duration']}s")
+    _save(timeline, out / "timeline.json")
+
+    # ── ETAPA 12: TTS com word boundaries — P5 ────────────────────────────────
+    _step(12, "Síntese de voz + legendas profissionais (P5)")
+    narration_text = narration.get("narration_full", "")
+    word_boundaries = []
+    if narration_text:
+        try:
+            wav_path, srt_path, ass_path, word_boundaries = synthesize_with_subtitles(
+                narration_text, out, ffmpeg_exe=ffmpeg
+            )
+            print(f"  Audio:     {wav_path.name}  ({wav_path.stat().st_size // 1024}KB)")
+            print(f"  Legendas:  {srt_path.name} + {ass_path.name}  "
+                  f"({len(word_boundaries)} word boundaries)")
+            # subtitles.json para Remotion (word-level timing)
+            dominant_style = styles_used[0] if styles_used else "CINEMATIC"
+            sub_json_path  = save_subtitles_json(word_boundaries, out, dominant_style)
+            print(f"  subtitles.json: {Path(sub_json_path).name}")
+        except Exception as e:
+            print(f"  [TTS] Erro: {e} — gerando silêncio placeholder")
+            _generate_silence_wav(out / "audio.wav")
+    else:
+        print("  Narração vazia, ignorando TTS.")
+
+    # ── ETAPA 13: Auditoria de renderização — P8 ──────────────────────────────
+    _step(13, "Auditoria de renderização (P8)")
+    audio_path = out / "audio.wav"
+    if audio_path.exists():
+        timeline, audit_report = audit_and_fix(timeline, str(audio_path), ffmpeg)
+        _save(timeline, out / "timeline.json")  # salva versão corrigida
+        _save(audit_report, out / "13_audit_report.json")
+        print(f"  Áudio:    {audit_report.get('audio_duration', 0):.1f}s")
+        print(f"  Timeline: {audit_report.get('timeline_duration', 0):.1f}s")
+        print(f"  Cobertura: {audit_report.get('coverage_pct', 0):.0f}%")
+        if audit_report.get("fixes_applied"):
+            for fix in audit_report["fixes_applied"]:
+                print(f"  FIX: {fix}")
+    else:
+        print("  Sem áudio — auditoria ignorada.")
+        audit_report = {}
+
+    # ── ETAPA 14: Metadados de publicação ─────────────────────────────────────
+    _step(14, "Metadados de publicação")
+    metadata = generate_metadata(story)
+    _save(metadata, out / "14_metadata.json")
+    yt    = metadata.get("titulos", {}).get("youtube_shorts", story.get("titulo", ""))
+    tags  = metadata.get("hashtags", {}).get("principais", [])
+    print(f"  YouTube: {yt}")
+    print(f"  Tags:    {' '.join(tags[:5])}")
+    _export_metadata_txt(metadata, out / "14_metadata.txt")
+
+    # ── ETAPA 15: Montagem ────────────────────────────────────────────────────
+    final_path = out / "final_video.mp4"
+    if not skip_video:
+        use_remotion = (renderer == "remotion") and remotion_bridge.is_available()
+        if use_remotion:
+            _step(15, "Montagem — Remotion (React renderer) [v3.5]")
+            video_path = remotion_bridge.render(out) or ""
+            if not video_path:
+                print("  Remotion falhou — usando FFmpeg como fallback")
+                use_remotion = False
+        if not use_remotion:
+            _step(15, "Montagem — FFmpeg + movimentos cinematográficos")
+            video_path = ffmpeg_assemble(timeline, out, ffmpeg_exe=ffmpeg)
+        print(f"  Vídeo final: {Path(video_path).name if video_path else 'não gerado'}")
+    else:
+        print("\n[ETAPA 15] Montagem ignorada (--skip-video)")
+        video_path = str(final_path)
+
+    # ── ETAPA 16: Relatório de qualidade — P9 ────────────────────────────────
+    _step(16, "Relatório de qualidade (P9)")
+    audio_dur = audit_report.get("audio_duration", 0.0)
+    q_report  = generate_quality_report(
+        timeline, audio_dur, acq_result, video_path, out, ffmpeg,
+        edit_decisions=edit_decisions, scene_contexts=scene_contexts,
+    )
+    _print_quality_summary(q_report)
+
+    # ── Sumário final ─────────────────────────────────────────────────────────
+    elapsed = time.time() - t0
+    print("\n" + "="*64)
+    print(f"  CONCLUÍDO em {elapsed:.1f}s  |  Modo: {mode['label']}")
+    print(f"  Score geral: {q_report['scores']['overall']}/10")
+    print(f"  Pasta: {out}")
+    for f in sorted(out.glob("*")):
+        if f.is_file() and not f.name.startswith("clip_") and f.name not in ("concat_list.txt", "raw_video.mp4", "audio_tmp.mp3"):
+            print(f"    {f.name:<40} {_fmt(f.stat().st_size)}")
+    print("="*64 + "\n")
+
+    return out
+
+
+# ─── Utilitários ──────────────────────────────────────────────────────────────
+
+def _generate_silence_wav(path: Path, duration: int = 180, sr: int = 24000):
+    import wave
+    with wave.open(str(path), "w") as wf:
+        wf.setnchannels(1)
+        wf.setsampwidth(2)
+        wf.setframerate(sr)
+        wf.writeframes(b"\x00\x00" * sr * duration)
+
+
+def _export_metadata_txt(metadata: dict, path: Path):
+    lines = []
+    for plat, titulo in (metadata.get("titulos") or {}).items():
+        lines += [f"[{plat.upper()}]", titulo, ""]
+    desc = metadata.get("descricao") or {}
+    lines += ["[DESCRIÇÃO]", desc.get("completa", ""), ""]
+    all_tags = (
+        (metadata.get("hashtags") or {}).get("principais", [])
+        + (metadata.get("hashtags") or {}).get("nicho", [])
+        + (metadata.get("hashtags") or {}).get("trending", [])
+    )
+    lines += ["[HASHTAGS]", " ".join(all_tags), ""]
+    thumb = metadata.get("thumbnail") or {}
+    lines += ["[THUMBNAIL]", thumb.get("prompt_principal", ""), "", f"Texto: {thumb.get('texto_sobreposicao','')}"]
+    path.write_text("\n".join(lines), encoding="utf-8")
+    print(f"  Metadados TXT: {path.name}")
+
+
+def _print_quality_summary(report: dict):
+    scores = report.get("scores", {})
+    status = report.get("status", "?")
+    symbols = {"excellent": "EXCELENTE", "good": "BOM", "needs_work": "MELHORAR"}
+    print(f"  Status:     {symbols.get(status, status)}")
+    print(f"  Visual:        {scores.get('visual', 0)}/10")
+    print(f"  Sync:          {scores.get('sync', 0)}/10")
+    print(f"  Narrativa:     {scores.get('narrative', 0)}/10")
+    print(f"  Variedade:     {scores.get('visual_variety_score', 0)}/10")
+    print(f"  Câmera:        {scores.get('camera_movement_score', 0)}/10")
+    print(f"  Legendas:      {scores.get('subtitle_quality_score', 0)}/10")
+    print(f"  Hist. acc.:    {scores.get('historical_accuracy_score', 0)}/10")
+    print(f"  Retenção:      {scores.get('retention_estimate', 0)}/10")
+    print(f"  GERAL:         {scores.get('overall', 0)}/10")
+    if report.get("issues"):
+        for issue in report["issues"]:
+            print(f"  [!] {issue}")
+
+
+# ─── Entry point ──────────────────────────────────────────────────────────────
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        description="StoryReplicator v3.5 — Remotion + Editor AI",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=(
+            "Exemplos:\n"
+            "  python main.py https://youtu.be/XXXXX\n"
+            "  python main.py https://youtu.be/XXXXX --renderer remotion\n"
+            "  python main.py https://youtu.be/XXXXX --renderer ffmpeg --mode short\n"
+            "  python main.py https://youtu.be/XXXXX --mode epic --skip-video\n"
+            "  python main.py https://youtu.be/XXXXX --skip-images\n"
+        ),
+    )
+    parser.add_argument("url")
+    parser.add_argument("--mode", default="documentary",
+                        choices=["micro","short","documentary","epic"])
+    parser.add_argument("--renderer", default="remotion",
+                        choices=["remotion","ffmpeg"],
+                        help="remotion=premium (padrão) | ffmpeg=compatibilidade")
+    parser.add_argument("--skip-video",        action="store_true")
+    parser.add_argument("--skip-images",       action="store_true")
+    parser.add_argument("--skip-video-search", action="store_true",
+                        help="Pular busca de vídeos históricos")
+    parser.add_argument("--output-dir",        default=None)
+    args = parser.parse_args()
+
+    run(
+        url=args.url,
+        renderer=args.renderer,
+        mode_name=args.mode,
+        skip_video=args.skip_video,
+        skip_images=args.skip_images,
+        skip_video_search=args.skip_video_search,
+        output_dir=args.output_dir,
+    )

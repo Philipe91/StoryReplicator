@@ -42,6 +42,10 @@ from modules.editor_ai              import analyze as editor_ai_analyze, save as
 from modules.hook_engine            import generate_hooks, select_best, save_hooks                # v4.0
 from modules.retention_engine       import analyze as retention_analyze, save_report as save_retention  # v4.0
 from modules.narration_director     import direct as direct_narration, save_directed              # v4.0
+import modules.character_engine      as character_engine                                          # v4.0
+import modules.map_engine            as map_engine                                                # v4.0
+import modules.newspaper_engine      as newspaper_engine                                          # v4.0
+from modules.sound_design_engine    import SoundDesignEngine                                      # v4.0
 from modules.visual_asset_engine    import UniversalVisualEngine, save_reports, extract_assignments  # v3.6
 from modules.music_engine            import MusicEngine, mix_audio                                    # v3.7
 from modules.visual_prompts         import generate_visual_prompts, export_prompts_txt
@@ -108,10 +112,12 @@ def run(
     skip_video_search: bool = False,
     output_dir: Path = None,
     langs: list = None,
+    mode_override: dict = None,
 ) -> Path:
 
     langs   = langs or ["pt"]
-    mode    = get_mode(mode_name)
+    # mode_override (Format Manager via API) tem prioridade sobre mode_name
+    mode    = mode_override if mode_override else get_mode(mode_name)
     ffmpeg  = _get_ffmpeg()
     _banner(mode)
     t0 = time.time()
@@ -202,6 +208,24 @@ def run(
     print(f"  Contextos extraídos: {len(scene_contexts)}")
     ctx_data = {cid: vars(ctx) for cid, ctx in scene_contexts.items()}
     _save(ctx_data, out / "07_scene_contexts.json")
+
+    # ── ETAPA 07a: Inteligência Visual — Character / Map / Newspaper (v4.0) ────
+    _step(7, "Inteligência Visual: personagens, mapas, jornais")
+    characters = character_engine.analyze(story, storyboard)
+    character_engine.save(characters, out)
+    map_cues = map_engine.analyze(storyboard, story)
+    map_engine.save(map_cues, out)
+    news_cues = newspaper_engine.analyze(storyboard, story)
+    newspaper_engine.save(news_cues, out)
+    # Injeta queries de mapa/jornal como prioridade nas cenas certas —
+    # alimenta o visual engine (characters.json fica salvo p/ a interface).
+    for c in map_cues:
+        if c.scene_id in scene_contexts and c.search_terms:
+            scene_contexts[c.scene_id].search_queries.insert(0, c.search_terms[0])
+    for c in news_cues:
+        if c.scene_id in scene_contexts and c.search_terms:
+            scene_contexts[c.scene_id].search_queries.insert(0, c.search_terms[0])
+    print(f"  Personagens: {len(characters)} | Mapas: {len(map_cues)} | Jornais: {len(news_cues)}")
 
     # ── ETAPA 07b: Editor AI — v3.5 ───────────────────────────────────────────
     _step(7, "Editor AI — decisões cinematográficas por cena (v3.5)")
@@ -306,6 +330,27 @@ def run(
                 print("  Nenhuma trilha encontrada — seguindo só com narração")
         except Exception as e:
             print(f"  [música] erro: {e} — seguindo só com narração")
+
+    # ── ETAPA 12c: Sound Design Engine — SFX contextuais (v4.0) ───────────────
+    sfx_info = {"applied": False, "cues": 0}
+    if audio_path.exists() and not skip_video:
+        _step(12, "Sound Design — efeitos sonoros contextuais (v4.0)")
+        try:
+            sde  = SoundDesignEngine(output_dir=out)
+            cues = sde.detect_cues(storyboard)
+            if cues:
+                cues = sde.acquire(cues)
+                if cues:
+                    mixed = out / "audio_sfx.wav"
+                    if sde.mix_into_audio(audio_path, cues, mixed, ffmpeg_exe=ffmpeg):
+                        import shutil; shutil.copy2(mixed, audio_path)
+                        sfx_info = {"applied": True, "cues": len(cues),
+                                    "categories": sorted({c.category for c in cues})}
+                sde.save_report(cues)
+            print(f"  SFX aplicados: {sfx_info['cues']} "
+                  f"({', '.join(sfx_info.get('categories', [])) or 'nenhum'})")
+        except Exception as e:
+            print(f"  [sfx] erro: {e} — seguindo sem efeitos")
 
     # ── ETAPA 13: Auditoria de renderização — P8 ──────────────────────────────
     _step(13, "Auditoria de renderização (P8)")
@@ -474,8 +519,15 @@ if __name__ == "__main__":
         ),
     )
     parser.add_argument("url")
-    parser.add_argument("--mode", default="documentary",
-                        choices=["micro","short","documentary","epic"])
+    parser.add_argument("--format", default=None,
+                        choices=["micro_story","short_documentary","documentary",
+                                 "long_documentary","custom"],
+                        help="Formato (Format Manager v4.0). Padrão: micro_story")
+    parser.add_argument("--duration", type=int, default=None,
+                        help="Duração-alvo em segundos (30-300). Sobrepõe o padrão do formato")
+    parser.add_argument("--mode", default=None,
+                        choices=["micro","short","documentary","epic"],
+                        help="(legado) modo fixo; prefira --format")
     parser.add_argument("--renderer", default="remotion",
                         choices=["remotion","ffmpeg"],
                         help="remotion=premium (padrão) | ffmpeg=compatibilidade")
@@ -488,13 +540,20 @@ if __name__ == "__main__":
                         help="Idiomas separados por vírgula (ex: pt,en,es). Padrão: pt")
     args = parser.parse_args()
 
+    # Format Manager: se --format ou --duration, resolve um mode dinâmico
+    mode_override = None
+    if args.format or args.duration:
+        from config import resolve_format
+        mode_override = resolve_format(args.format, args.duration)
+
     run(
         url=args.url,
         renderer=args.renderer,
-        mode_name=args.mode,
+        mode_name=args.mode or "documentary",
         skip_video=args.skip_video,
         skip_images=args.skip_images,
         skip_video_search=args.skip_video_search,
         output_dir=args.output_dir,
         langs=[l.strip() for l in args.langs.split(",") if l.strip()],
+        mode_override=mode_override,
     )

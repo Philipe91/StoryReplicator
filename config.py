@@ -79,7 +79,7 @@ VIDEO_MODES = {
     },
 }
 
-DEFAULT_MODE = "documentary"   # P7: novo padrão
+DEFAULT_MODE = "documentary"
 
 
 def get_mode(name: str = None) -> dict:
@@ -90,6 +90,79 @@ def get_mode(name: str = None) -> dict:
         _aliases = {"reel": "short", "short60": "micro"}
         name = _aliases.get(name, DEFAULT_MODE)
     return VIDEO_MODES[name]
+
+
+# ─── Format Manager (v4.0) ────────────────────────────────────────────────────
+# Formatos comerciais com faixa de duração. A interface oferece estes ao usuário.
+# Micro Story é o PADRÃO. Arquitetura suporta de 30s até 300s (5 min).
+
+VIDEO_FORMATS = {
+    "micro_story":       {"label": "Micro Story",       "min": 30,  "max": 60,  "default": 45},
+    "short_documentary": {"label": "Short Documentary", "min": 60,  "max": 120, "default": 90},
+    "documentary":       {"label": "Documentary",       "min": 120, "max": 240, "default": 180},
+    "long_documentary":  {"label": "Long Documentary",  "min": 240, "max": 300, "default": 270},
+    "custom":            {"label": "Custom",            "min": 30,  "max": 300, "default": 60},
+}
+
+DEFAULT_FORMAT = "micro_story"
+DURATION_MIN   = 30
+DURATION_MAX   = 300
+
+# Estrutura narrativa por faixa de duração (proporções do total).
+# Vídeos curtos: menos segmentos; longos: mais desenvolvimento.
+_SEGMENT_TEMPLATES = [
+    # (duração_max, [(segmento, fração_do_total), ...])
+    (75,  [("hook",0.06),("contexto",0.16),("conflito",0.30),("escalada",0.28),
+           ("plot_twist",0.12),("cta",0.08)]),
+    (140, [("hook",0.04),("contexto",0.12),("conflito",0.26),("escalada",0.24),
+           ("plot_twist",0.16),("final",0.12),("cta",0.06)]),
+    (260, [("hook",0.03),("contexto",0.12),("personagens",0.12),("conflito",0.22),
+           ("escalada",0.22),("plot_twist",0.13),("final",0.10),("cta",0.06)]),
+    (999, [("hook",0.02),("introducao",0.10),("contexto",0.12),("personagens",0.12),
+           ("conflito",0.18),("escalada",0.18),("plot_twist",0.12),("desfecho",0.10),
+           ("legado",0.04),("cta",0.02)]),
+]
+
+
+def build_mode_for_duration(seconds: int) -> dict:
+    """
+    Gera dinamicamente um 'mode' para QUALQUER duração entre 30 e 300s,
+    escalando os segmentos narrativos proporcionalmente. Pronto para a
+    interface enviar uma duração-alvo livre.
+    """
+    seconds = max(DURATION_MIN, min(DURATION_MAX, int(seconds)))
+    template = next(segs for dmax, segs in _SEGMENT_TEMPLATES if seconds <= dmax)
+
+    segments, t = {}, 0.0
+    for i, (name, frac) in enumerate(template):
+        start = round(t)
+        end   = seconds if i == len(template) - 1 else round(t + seconds * frac)
+        segments[name] = {"start": start, "end": end}
+        t = end
+
+    return {
+        "label":          f"{seconds}s",
+        "duration":       seconds,
+        "target_words":   int(seconds * 2.5),   # ~2.5 palavras/s PT-BR
+        "scene_interval": 4 if seconds <= 180 else 5,
+        "segments":       segments,
+    }
+
+
+def resolve_format(format_name: str = None, target_duration: int = None) -> dict:
+    """
+    Resolve um formato + duração-alvo em um 'mode' completo.
+    Usado pela camada de API/interface.
+    - format_name: micro_story | short_documentary | documentary | long_documentary | custom
+    - target_duration: duração específica (sobrepõe o default do formato)
+    """
+    fmt = VIDEO_FORMATS.get((format_name or DEFAULT_FORMAT).lower(), VIDEO_FORMATS[DEFAULT_FORMAT])
+    dur = target_duration or fmt["default"]
+    dur = max(fmt["min"], min(fmt["max"], int(dur)))
+    mode = build_mode_for_duration(dur)
+    mode["format"] = format_name or DEFAULT_FORMAT
+    mode["label"]  = f"{fmt['label']} ({dur}s)"
+    return mode
 
 
 # ─── Emoções → movimentos cinematográficos — P6 ───────────────────────────────

@@ -217,16 +217,27 @@ class UniversalVisualEngine:
         "newsreel", "documentary", "image", "picture", "scene", "old", "antique",
         "1936", "1937", "1935", "1900s", "mid", "the", "of", "a", "an", "and", "with",
     }
-    # Indícios de que a imagem é um RETRATO DE PESSOA (não objeto/lugar/evento)
+    # Indícios de que a imagem é um RETRATO/FOTO DE PESSOA (PT/EN/DE/NL/ES/FR/IT)
     _PERSON_HINTS = {
+        # inglês
         "portrait", "president", "von", "captain", "commander", "crew member",
         "official", "politician", "general", "minister", "man ", "woman ",
-        "headshot", "posing", "bust",
+        "headshot", "posing", "bust", "survivors", "survivor", "people",
+        # holandês (ex: 'Overlevenden van de ramp')
+        "overlevenden", "slachtoffers", "mensen", "portret",
+        # alemão
+        "porträt", "überlebende", "menschen", "besatzung",
+        # português / espanhol
+        "retrato", "sobreviventes", "sobrevivientes", "vítimas", "víctimas",
+        "tripulação", "tripulación", "pessoas", "personas",
+        # francês / italiano
+        "portrait de", "survivants", "ritratto", "sopravvissuti",
     }
     # Termos que indicam que a CENA é sobre pessoa(s)
     _SCENE_ABOUT_PERSON = {
         "passenger", "crew", "survivor", "people", "man", "woman", "captain",
-        "person", "portrait", "victim", "officer",
+        "person", "portrait", "victim", "officer", "passageiro", "tripulação",
+        "sobrevivente", "pessoa", "vítima",
     }
 
     def _scene_terms(self, ctx) -> list:

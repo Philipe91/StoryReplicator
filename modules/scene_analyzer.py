@@ -21,7 +21,8 @@ class SceneContext:
     emotion:       str = "mystery"
     context:       str = ""
     visual_types:  list = field(default_factory=list)   # ["photograph", "map", "newspaper"]
-    search_queries: list = field(default_factory=list)   # 5 queries em inglês
+    search_queries: list = field(default_factory=list)   # 5 queries de imagem em inglês
+    video_queries:  list = field(default_factory=list)   # queries de vídeo (footage) — v3.6
 
 
 # ─── Mapeamentos ──────────────────────────────────────────────────────────────
@@ -134,8 +135,22 @@ def analyze_scene(cena: dict, story: dict) -> SceneContext:
     if not ctx.visual_types:
         ctx.visual_types = ["historical photograph", "documentary photograph"]
 
-    # Gera queries de busca em inglês
-    ctx.search_queries = _build_search_queries(ctx)
+    # Gera queries de busca em inglês.
+    # PRIORIDADE: a descrição visual ORIGINAL é a query #1 (é específica e
+    # precisa — escrita para a cena). As remontadas vêm como fallback.
+    generated = _build_search_queries(ctx)
+    desc_query = " ".join((desc or "").split())   # normaliza espaços
+    if desc_query and len(desc_query) > 8:
+        ctx.search_queries = [desc_query] + [q for q in generated if q != desc_query]
+    else:
+        ctx.search_queries = generated
+
+    # Gera queries de vídeo (footage) — descrição original primeiro se for de vídeo
+    gen_videos = _build_video_queries(ctx)
+    if cena.get("tipo_visual") == "video" and desc_query:
+        ctx.video_queries = [desc_query] + [q for q in gen_videos if q != desc_query]
+    else:
+        ctx.video_queries = gen_videos
 
     return ctx
 
@@ -306,5 +321,74 @@ def _build_search_queries(ctx: SceneContext) -> list:
     # Garante pelo menos 2 queries
     if not result:
         result = [f"{ctx.period} historical photograph", "vintage documentary photograph"]
+
+    return result[:5]
+
+
+# Tradução de ações PT→EN para queries de footage
+_ACTION_EN = {
+    "assinando": "signing", "observando": "watching", "caminhando": "walking",
+    "falando": "talking", "entregando": "handing", "recebendo": "receiving",
+    "fugindo": "escaping", "preso": "arrested", "vendendo": "selling",
+    "comprando": "buying", "lendo": "reading", "escrevendo": "writing",
+}
+
+# Objetos → termos de footage genérico (B-roll de contexto)
+_OBJECT_FOOTAGE = {
+    "bridge": "bridge aerial footage", "tower": "tower landmark footage",
+    "building": "old building footage", "prison": "prison corridor footage",
+    "street": "vintage city street footage", "crowd": "crowd people footage",
+    "ship": "ship sea footage", "money": "money cash footage",
+    "ponte": "bridge aerial footage", "prisão": "prison corridor footage",
+    "rua": "vintage city street footage", "navio": "ship sea footage",
+}
+
+
+def _build_video_queries(ctx: SceneContext) -> list:
+    """
+    Gera queries de VÍDEO (footage) por ordem de relevância — v3.6.
+    1. ação + objeto (mais relevante)
+    2. objeto + contexto
+    3. footage histórico do período
+    4. B-roll genérico do objeto/local
+    """
+    queries = []
+    loc     = ctx.location
+    period  = ctx.period
+    obj     = ctx.main_object
+    action_en = _ACTION_EN.get(ctx.action, ctx.action)
+
+    # 1. Vídeo altamente relevante: ação + objeto
+    if action_en and obj:
+        obj_en = obj if obj.isascii() else _OBJECT_FOOTAGE.get(obj, obj)
+        queries.append(f"{action_en} {obj_en} footage")
+
+    # 2. Vídeo de contexto: objeto + footage
+    if obj:
+        queries.append(_OBJECT_FOOTAGE.get(obj, f"{obj} footage"))
+
+    # 3. Vídeo histórico do período/local
+    if period:
+        queries.append(f"{period} historical footage archival")
+    if loc and loc.isascii():
+        queries.append(f"{loc} vintage footage")
+
+    # 4. B-roll genérico baseado na emoção
+    emotion_footage = {
+        "tension":     "dramatic dark footage",
+        "mystery":     "fog mysterious footage",
+        "revelation":  "light reveal footage",
+        "triumph":     "sunrise hopeful footage",
+        "resolution":  "calm landscape footage",
+    }.get(ctx.emotion, "cinematic background footage")
+    queries.append(emotion_footage)
+
+    # Dedup + limpeza
+    seen, result = set(), []
+    for q in queries:
+        q = " ".join(q.split())   # normaliza espaços
+        if q and len(q) > 6 and q not in seen:
+            seen.add(q)
+            result.append(q)
 
     return result[:5]

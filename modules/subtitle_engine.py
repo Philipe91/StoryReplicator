@@ -40,13 +40,20 @@ _HIGHLIGHT_PATTERNS = [
 
 # ─── TTS com word boundaries ───────────────────────────────────────────────────
 
-async def _stream_tts(text: str, voice: str, mp3_path: str) -> list:
+async def _stream_tts(text: str, voice: str, mp3_path: str,
+                      pitch: str = "+0Hz", rate: str = "+0%") -> list:
     """
     Gera áudio via edge-tts capturando eventos WordBoundary.
+    pitch/rate ajustam tom e velocidade da voz.
     Retorna lista de {word, start, end} em segundos.
     """
     import edge_tts
-    comm = edge_tts.Communicate(text, voice=voice)
+    kwargs = {"voice": voice}
+    if pitch and pitch != "+0Hz":
+        kwargs["pitch"] = pitch
+    if rate and rate != "+0%":
+        kwargs["rate"] = rate
+    comm = edge_tts.Communicate(text, **kwargs)
     boundaries = []
 
     with open(mp3_path, "wb") as f:
@@ -69,13 +76,19 @@ def synthesize_with_subtitles(
     output_dir: Path,
     voice: str = None,
     ffmpeg_exe: str = "ffmpeg",
+    pitch: str = None,
+    rate: str = None,
 ) -> tuple:
     """
     Gera áudio + legendas (.srt e .ass) com sincronização precisa.
+    voice/pitch/rate permitem voz nativa por idioma (multi-idioma v3.8).
 
     Retorna: (audio_wav_path, srt_path, ass_path, word_boundaries)
     """
+    from config import EDGE_TTS_PITCH, EDGE_TTS_RATE
     voice     = voice or EDGE_TTS_VOICE
+    pitch     = pitch if pitch is not None else EDGE_TTS_PITCH
+    rate      = rate  if rate  is not None else EDGE_TTS_RATE
     output_dir = Path(output_dir)
     mp3_path  = output_dir / "audio_tmp.mp3"
     wav_path  = output_dir / "audio.wav"
@@ -83,14 +96,21 @@ def synthesize_with_subtitles(
     ass_path  = output_dir / "subtitles.ass"
 
     # Gera áudio e captura word boundaries
-    boundaries = asyncio.run(_stream_tts(text, voice, str(mp3_path)))
+    boundaries = asyncio.run(_stream_tts(text, voice, str(mp3_path), pitch, rate))
 
     # Converte MP3 → WAV
     _mp3_to_wav(str(mp3_path), str(wav_path), ffmpeg_exe)
 
     # Se não há word boundaries (fallback sem TTS), usa segmentação simples
+    real_dur = _get_audio_duration(str(wav_path), ffmpeg_exe)
     if not boundaries:
-        boundaries = _estimate_boundaries(text, _get_audio_duration(str(wav_path), ffmpeg_exe))
+        boundaries = _estimate_boundaries(text, real_dur)
+    else:
+        # CORREÇÃO DE SYNC: o edge-tts reporta tempos na escala SEM rate/pitch,
+        # mas o áudio final reflete o rate (ex: rate=-5% → fala mais longa).
+        # Escala linearmente os timings para casar com a duração real do áudio,
+        # eliminando o "adiantamento" progressivo das legendas.
+        boundaries = _rescale_boundaries(boundaries, real_dur)
 
     # Gera legendas
     blocks = _group_into_blocks(boundaries)
@@ -271,18 +291,65 @@ def _ass_tc(seconds: float) -> str:
     return f"{s//3600}:{(s%3600)//60:02d}:{s%60:02d}.{cs:02d}"
 
 
+# ─── Correção de sincronização ─────────────────────────────────────────────────
+
+def _rescale_boundaries(boundaries: list, real_duration: float) -> list:
+    """
+    Escala linearmente os timings das palavras para casar com a duração real
+    do áudio. Corrige o adiantamento causado por rate/pitch no edge-tts.
+    """
+    if not boundaries or real_duration <= 0:
+        return boundaries
+    last_end = max(b["end"] for b in boundaries)
+    if last_end <= 0:
+        return boundaries
+    # Fator: alinha a última palavra ao fim da fala (98% do áudio p/ margem)
+    factor = (real_duration * 0.98) / last_end
+    # Só corrige se o desvio é relevante (>2%)
+    if abs(factor - 1.0) < 0.02:
+        return boundaries
+    return [
+        {"word": b["word"],
+         "start": round(b["start"] * factor, 3),
+         "end":   round(b["end"]   * factor, 3)}
+        for b in boundaries
+    ]
+
+
 # ─── Fallbacks ────────────────────────────────────────────────────────────────
 
 def _estimate_boundaries(text: str, total_duration: float) -> list:
-    """Estimativa de timing quando word boundaries não disponíveis (2.5 palavras/s)."""
-    words    = text.split()
-    rate     = total_duration / max(len(words), 1)
-    result   = []
-    current  = 0.0
+    """
+    Estima timing das palavras DISTRIBUINDO proporcionalmente ao longo da
+    duração REAL do áudio. Usado quando o edge-tts não emite WordBoundary
+    (ex: ao usar pitch+rate). Cada palavra recebe um peso (tamanho + pausa
+    de pontuação) e o total é escalado para casar exatamente com o áudio.
+    """
+    words = text.split()
+    if not words or total_duration <= 0:
+        return []
+
+    # Peso de cada palavra: nº de caracteres + pausa extra após pontuação forte
+    weights = []
     for w in words:
-        dur = len(w) * 0.07 + 0.05    # heurística baseada em tamanho
-        dur = max(dur, 0.12)
-        result.append({"word": w, "start": round(current, 3), "end": round(current + dur, 3)})
+        weight = max(len(w), 2)              # base pelo tamanho
+        if w.endswith((".", "!", "?")):
+            weight += 6                      # pausa longa após frase
+        elif w.endswith((",", ";", ":")):
+            weight += 3                      # pausa média
+        if w.endswith("...") or w == "...":
+            weight += 8                      # pausa dramática (reticências)
+        weights.append(weight)
+
+    total_weight = sum(weights)
+    # Reserva 2% no fim (a última palavra não termina no fim exato do arquivo)
+    usable = total_duration * 0.98
+    result = []
+    current = 0.0
+    for w, weight in zip(words, weights):
+        dur = usable * (weight / total_weight)
+        result.append({"word": w, "start": round(current, 3),
+                       "end": round(current + dur, 3)})
         current += dur
     return result
 

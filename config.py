@@ -119,7 +119,40 @@ IMAGE_STYLE = (
 KOKORO_VOICE   = "af_bella"
 KOKORO_SPEED   = 1.0
 KOKORO_LANG    = "pt"
-EDGE_TTS_VOICE = "pt-BR-FranciscaNeural"
+
+# ─── Multi-idioma (v3.8) ──────────────────────────────────────────────────────
+# Cada idioma usa uma voz NATIVA daquele idioma — evita o "escorregão" de
+# vozes multilíngues para outro idioma. pitch/rate ajustam tom e ritmo.
+LANG_CONFIG = {
+    "pt": {
+        "name":      "Português (BR)",
+        "tts_voice": "pt-BR-AntonioNeural",     # masculina nativa BR
+        "pitch":     "-8Hz",                    # levemente grave (opção A escolhida)
+        "rate":      "-5%",
+        "translate_code": "pt",
+    },
+    "en": {
+        "name":      "English (US)",
+        "tts_voice": "en-US-AndrewNeural",      # masculina nativa EN (não-multilíngue)
+        "pitch":     "-5Hz",
+        "rate":      "-3%",
+        "translate_code": "en",
+    },
+    "es": {
+        "name":      "Español (ES)",
+        "tts_voice": "es-ES-AlvaroNeural",      # masculina nativa ES
+        "pitch":     "-5Hz",
+        "rate":      "-3%",
+        "translate_code": "es",
+    },
+}
+
+DEFAULT_LANG = "pt"
+
+# Voz/idioma padrão usados quando não se especifica idioma
+EDGE_TTS_VOICE = LANG_CONFIG[DEFAULT_LANG]["tts_voice"]
+EDGE_TTS_PITCH = LANG_CONFIG[DEFAULT_LANG]["pitch"]
+EDGE_TTS_RATE  = LANG_CONFIG[DEFAULT_LANG]["rate"]
 
 # ─── FFmpeg ────────────────────────────────────────────────────────────────────
 FFMPEG_CRF        = 20
@@ -138,3 +171,123 @@ NARRATION_TONE = (
     "documental, cinematográfico, misterioso e altamente envolvente. "
     "Use frases curtas e impactantes. Crie suspense. Narre como um documentário da Netflix."
 )
+
+# ─── v3.6 — Universal Visual Asset Engine ─────────────────────────────────────
+
+# Chaves de API GRATUITAS (opcionais). Sem elas, o engine usa apenas
+# Wikimedia + Internet Archive + Library of Congress (zero custo, zero cadastro).
+# Para ativar Pexels/Pixabay, registre-se grátis e exporte as variáveis:
+#   set PEXELS_API_KEY=...    (https://www.pexels.com/api/  — gratuito)
+#   set PIXABAY_API_KEY=...   (https://pixabay.com/api/docs/ — gratuito)
+PEXELS_API_KEY  = os.getenv("PEXELS_API_KEY", "")
+PIXABAY_API_KEY = os.getenv("PIXABAY_API_KEY", "")
+
+# Ordem de prioridade dos tipos de ativo (1 = melhor). Usada no scoring.
+ASSET_PRIORITY = {
+    "video_relevant":   1,   # vídeo altamente relevante para a cena
+    "video_context":    2,   # vídeo relacionado ao contexto
+    "video_historical": 3,   # vídeo histórico
+    "photo_historical": 4,   # fotografia histórica
+    "document":         5,   # documento histórico
+    "newspaper":        6,   # jornal histórico
+    "map":              7,   # mapa
+    "engraving":        8,   # gravura
+    "image_complement": 9,   # imagem complementar
+}
+
+# Duração útil de cada ativo na timeline (segundos)
+ASSET_DURATION_MIN = 2.0
+ASSET_DURATION_MAX = 6.0
+
+# Mistura-alvo da timeline (proporções). O engine tenta se aproximar.
+ASSET_MIX_TARGET = {
+    "video":      0.50,   # 40–60%
+    "image":      0.30,   # 20–40%
+    "document":   0.20,   # 10–20% (documentos, mapas, jornais)
+}
+
+# B-roll: categorias genéricas para ilustrar contexto quando faltar material
+BROLL_CATEGORIES = [
+    "corridor", "city street", "crowd", "vehicle",
+    "building exterior", "document close up", "landscape",
+]
+
+# ─── v3.7 — Adaptive Music Engine ─────────────────────────────────────────────
+
+# Categorias de trilha sonora
+MUSIC_CATEGORIES = [
+    "MYSTERY", "INVESTIGATION", "DRAMATIC", "HISTORICAL", "SUSPENSE",
+    "EMOTIONAL", "TRIUMPH", "DARK", "INSPIRING",
+]
+
+# Emoção da cena → categoria musical
+EMOTION_TO_MUSIC = {
+    "mystery":      "MYSTERY",
+    "curiosity":    "INVESTIGATION",
+    "tension":      "SUSPENSE",
+    "revelation":   "DRAMATIC",
+    "triumph":      "TRIUMPH",
+    "resolution":   "EMOTIONAL",
+    "contemplation":"EMOTIONAL",
+    "push_in":      "DRAMATIC",
+    "pan_right":    "HISTORICAL",
+    "pan_left":     "HISTORICAL",
+    "zoom_in":      "INVESTIGATION",
+    "static":       "EMOTIONAL",
+}
+
+# Segmento narrativo → categoria musical (usado para emoção dominante)
+SEGMENT_TO_MUSIC = {
+    "hook":       "MYSTERY",
+    "introducao": "HISTORICAL",
+    "contexto":   "INVESTIGATION",
+    "personagens":"HISTORICAL",
+    "conflito":   "SUSPENSE",
+    "escalada":   "DRAMATIC",
+    "plot_twist": "DRAMATIC",
+    "desfecho":   "TRIUMPH",
+    "final":      "EMOTIONAL",
+    "legado":     "INSPIRING",
+    "cta":        "EMOTIONAL",
+}
+
+# Termos de busca de música por categoria (Internet Archive, sem chave)
+MUSIC_SEARCH_TERMS = {
+    "MYSTERY":       "mysterious ambient instrumental cinematic",
+    "INVESTIGATION": "investigation detective instrumental suspense",
+    "DRAMATIC":      "dramatic orchestral cinematic instrumental",
+    "HISTORICAL":    "historical orchestral classical instrumental",
+    "SUSPENSE":      "suspense tension dark instrumental",
+    "EMOTIONAL":     "emotional piano cinematic instrumental",
+    "TRIUMPH":       "triumphant epic orchestral instrumental",
+    "DARK":          "dark ambient drone instrumental",
+    "INSPIRING":     "inspiring uplifting cinematic instrumental",
+}
+
+# Volumes de mixagem
+NARRATION_VOLUME = 1.0     # 100%
+MUSIC_VOLUME     = 0.16    # 16% (faixa 12–20%)
+MUSIC_DUCK_VOLUME = 0.08   # volume da música quando há narração (ducking)
+MUSIC_FADE_SEC   = 1.5     # duração de fade in/out
+
+# ─── v3.7 — Visual Quality Filter ─────────────────────────────────────────────
+
+# Resolução mínima aceitável
+MIN_IMAGE_WIDTH      = 1280
+PREFERRED_IMAGE_WIDTH = 1920
+MIN_VIDEO_HEIGHT     = 720
+PREFERRED_VIDEO_HEIGHT = 1080
+
+# Limiar de detecção de borrão (variância do Laplaciano). Abaixo = borrada.
+# Baixo (25) para tolerar fotos históricas/scans antigos, que são naturalmente
+# menos nítidos mas legítimos. Rejeita apenas borrão severo.
+BLUR_VARIANCE_THRESHOLD = 22.0
+
+# Razão bytes/pixel mínima (abaixo = excessivamente comprimida)
+MIN_BYTES_PER_PIXEL = 0.05
+
+# Upscale: caminho para Real-ESRGAN ou Upscayl (opcional). Vazio = desativado.
+REALESRGAN_PATH = os.getenv("REALESRGAN_PATH", "")
+UPSCAYL_PATH    = os.getenv("UPSCAYL_PATH", "")
+# Score de relevância acima do qual vale a pena fazer upscale de ativo pequeno
+UPSCALE_RELEVANCE_THRESHOLD = 0.55

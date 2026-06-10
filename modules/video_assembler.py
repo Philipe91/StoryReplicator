@@ -135,16 +135,30 @@ def _render_scene(scene: dict, output_dir: Path, w: str, h: str,
     if vid_file:
         vid_path = output_dir / vid_file
         if vid_path.exists():
-            return _render_video_clip(vid_path, clip, duration, w, h, ffmpeg_exe)
+            result = _render_video_clip(vid_path, clip, duration, w, h, ffmpeg_exe)
+            if result:
+                return result
+            # vídeo falhou → cai para imagem da cena (fallback robusto)
 
     # Imagem estática com movimento cinematográfico
     img_file = scene.get("image_file", f"assets/image_{cid:02d}.jpg")
     img_path = output_dir / img_file
 
-    if not img_path.exists():
+    if not img_path.exists() or not _valid_image(img_path):
         img_path = _create_placeholder(output_dir, cid, scene.get("subtitle",""), w, h, ffmpeg_exe)
 
     return _render_image_clip(img_path, clip, duration, emotion, w, h, ffmpeg_exe)
+
+
+def _valid_image(path: Path) -> bool:
+    """Verifica se o arquivo é uma imagem válida (evita JPG corrompido/HTML)."""
+    try:
+        from PIL import Image
+        with Image.open(path) as im:
+            im.verify()
+        return True
+    except Exception:
+        return False
 
 
 def _render_image_clip(img_path: Path, clip: Path, duration: float,
@@ -175,16 +189,26 @@ def _render_image_clip(img_path: Path, clip: Path, duration: float,
 
 def _render_video_clip(vid_path: Path, clip: Path, duration: float,
                         w: str, h: str, ffmpeg_exe: str) -> str | None:
-    """Processa clipe de vídeo histórico: recorta duração, adapta resolução."""
+    """
+    Processa clipe de vídeo histórico: recorta duração e adapta resolução.
+    -ss/-t ANTES do -i (fast seek no input) evita decodificar o vídeo inteiro —
+    crítico para clipes longos de archive (que antes causavam timeout).
+    """
     vf = f"scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h},format=yuv420p"
-    _run([
-        ffmpeg_exe, "-y", "-i", str(vid_path),
-        "-t", str(duration),
+    r = _run([
+        ffmpeg_exe, "-y",
+        "-ss", "0", "-t", str(duration),     # corta NO INPUT (rápido)
+        "-i", str(vid_path),
         "-vf", vf,
-        "-c:v", "libx264", "-preset", "fast", "-crf", "24",
-        "-an", "-r", str(FRAME_RATE), str(clip)
-    ], timeout=120)
-    return str(clip) if clip.exists() else None
+        "-c:v", "libx264", "-preset", "ultrafast", "-crf", "26",
+        "-an", "-r", str(FRAME_RATE),
+        "-frames:v", str(int(duration * FRAME_RATE)),
+        str(clip)
+    ], timeout=90)
+    if r != 0 or not clip.exists():
+        print(f"    [assembler] vídeo {vid_path.name} falhou — usando imagem da cena")
+        return None
+    return str(clip)
 
 
 # ─── Filtro cinematográfico (Ken Burns + movimentos) ──────────────────────────

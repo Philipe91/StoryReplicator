@@ -40,3 +40,9 @@ Thumbs.db
 .env
 *.key
 output_test_data.json
+
+# Scripts de teste manual (v3.6-v4.0)
+render_30s.py
+render_v37.py
+render_v4_compare.py
+render_hindenburg.py

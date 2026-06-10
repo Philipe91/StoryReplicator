@@ -17,8 +17,14 @@ def generate(
     ffmpeg_exe: str = "ffmpeg",
     edit_decisions: list = None,
     scene_contexts: dict = None,
+    visual_assets_result: dict = None,
+    music_info: dict = None,
+    hook_score: float = None,
+    retention_score_100: int = None,
 ) -> dict:
     """Gera quality_report.json após a renderização."""
+    visual_assets_result = visual_assets_result or {}
+    music_info           = music_info or {}
 
     scenes          = timeline.get("scenes", [])
     total_scenes    = len(scenes)
@@ -80,9 +86,32 @@ def generate(
         issues.append(f"{len(long_scenes)} cenas com duração > 7s (parecem slideshow)")
         recommendations.append("Use modo documentary com cenas de 4s — edita config DEFAULT_MODE")
 
+    # ── Métricas v3.6 (Universal Visual Asset Engine) ─────────────────────────
+    va           = visual_assets_result
+    video_count  = va.get("video_count", len(videos_used))
+    image_count  = va.get("image_count", len(images_used))
+    hist_count   = va.get("historical_assets_count", 0)
+    doc_count    = va.get("document_count", 0)
+    broll_count  = sum(1 for d in edit_decisions if getattr(d, "broll_needed", False)) if edit_decisions else 0
+    coverage_score = round(min(coverage_pct / 100 * 10, 10.0), 1)
+    asset_mix    = va.get("mix_pct", {})
+
+    # v3.7 — Visual Quality Filter
+    visual_quality_score = va.get("visual_quality_score", 0.0)
+    low_res_rejected     = va.get("low_resolution_rejected", 0)
+    upscaled             = va.get("upscaled_assets", 0)
+    avg_resolution       = va.get("average_resolution", "0x0")
+
+    # v3.7 — Adaptive Music Engine
+    music_category    = music_info.get("category", "none")
+    music_source      = music_info.get("source", "none")
+    has_music         = music_info.get("applied", False)
+    music_score       = _score_music(music_info)
+    audio_balance     = _score_audio_balance(music_info)
+
     # ── Relatório final ───────────────────────────────────────────────────────
     report = {
-        "version":          "2.0",
+        "version":          "3.7",
         "final_duration":   round(final_duration, 2),
         "target_duration":  round(target_duration, 2),
         "audio_duration":   round(audio_duration, 2),
@@ -93,20 +122,44 @@ def generate(
         "found_assets":     found_assets,
         "missing_assets":   missing_img,
         "visual_coverage_pct": coverage_pct,
+        "video_count":      video_count,
+        "image_count":      image_count,
+        "historical_assets_count": hist_count,
+        "document_count":   doc_count,
+        "broll_count":      broll_count,
+        "coverage_score":   coverage_score,
+        "asset_mix_pct":    asset_mix,
+        # v3.7 — Visual Quality Filter
+        "low_resolution_rejected": low_res_rejected,
+        "upscaled_assets":         upscaled,
+        "average_resolution":      avg_resolution,
+        # v3.7 — Adaptive Music Engine
+        "music_category":   music_category,
+        "music_source":     music_source,
+        "music_applied":    has_music,
+        # v4.0 — Núcleo de Retenção
+        "retention_score":  retention_score_100 if retention_score_100 is not None else int(retention_score * 10),
+        "hook_score":       round(hook_score, 1) if hook_score is not None else None,
+        "estimated_ctr":    _estimate_ctr(hook_score, retention_score_100),
         "scores": {
             "visual":               visual_score,
             "sync":                 sync_score,
             "narrative":            narrative_score,
             "retention_estimate":   retention_score,
+            "hook_score":           round(hook_score, 1) if hook_score is not None else 6.0,
             "visual_variety_score": visual_variety_score,
             "camera_movement_score":camera_movement_score,
             "subtitle_quality_score":subtitle_quality_score,
             "historical_accuracy_score": historical_acc_score,
+            "visual_quality_score": visual_quality_score,
+            "music_score":          music_score,
+            "audio_balance_score":  audio_balance,
             "overall": round((
                 visual_score + sync_score + narrative_score + retention_score
                 + visual_variety_score + camera_movement_score
                 + subtitle_quality_score + historical_acc_score
-            ) / 8, 1),
+                + visual_quality_score + music_score + audio_balance
+            ) / 11, 1),
         },
         "issues":           issues,
         "recommendations":  recommendations,
@@ -116,6 +169,49 @@ def generate(
     report_path = Path(output_dir) / "quality_report.json"
     report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     return report
+
+
+# ─── Estimativa de CTR (v4.0) ──────────────────────────────────────────────────
+
+def _estimate_ctr(hook_score: float, retention_100: int) -> str:
+    """Estima faixa de CTR com base no hook e retenção (heurístico)."""
+    h = hook_score if hook_score is not None else 6.0
+    r = (retention_100 if retention_100 is not None else 60) / 10.0
+    combined = h * 0.6 + r * 0.4   # 0-10
+    if combined >= 8.5:
+        return "alto (8-12%)"
+    if combined >= 7:
+        return "bom (5-8%)"
+    if combined >= 5:
+        return "médio (3-5%)"
+    return "baixo (<3%)"
+
+
+# ─── Scores v3.7 (música) ──────────────────────────────────────────────────────
+
+def _score_music(music_info: dict) -> float:
+    """Score da trilha sonora: presença, fonte e coerência de categoria."""
+    if not music_info.get("applied"):
+        return 5.0   # neutro: vídeo sem música ainda é válido
+    score = 7.0
+    if music_info.get("category") and music_info.get("category") != "none":
+        score += 1.5
+    if music_info.get("source") and "fallback" not in str(music_info.get("source", "")):
+        score += 1.5
+    return round(min(score, 10.0), 1)
+
+
+def _score_audio_balance(music_info: dict) -> float:
+    """Equilíbrio áudio: narração nunca abafada pela música."""
+    if not music_info.get("applied"):
+        return 8.0   # só narração = sempre inteligível
+    if music_info.get("ducking"):
+        return 10.0  # ducking garante narração clara
+    vol = music_info.get("music_volume", 0.16)
+    # Volume na faixa 12-20% é ideal
+    if 0.10 <= vol <= 0.22:
+        return 8.5
+    return 6.0
 
 
 # ─── Scores individuais ───────────────────────────────────────────────────────

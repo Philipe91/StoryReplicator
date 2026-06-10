@@ -39,8 +39,11 @@ from modules.narration_writer       import write_narration
 from modules.storyboard_generator   import generate_storyboard
 from modules.scene_analyzer         import analyze_all_scenes
 from modules.editor_ai              import analyze as editor_ai_analyze, save as editor_ai_save   # v3.5
-from modules.image_acquisition_engine import ImageAcquisitionEngine, save_acquisition_reports
-from modules.video_acquisition      import VideoAcquisitionEngine
+from modules.hook_engine            import generate_hooks, select_best, save_hooks                # v4.0
+from modules.retention_engine       import analyze as retention_analyze, save_report as save_retention  # v4.0
+from modules.narration_director     import direct as direct_narration, save_directed              # v4.0
+from modules.visual_asset_engine    import UniversalVisualEngine, save_reports, extract_assignments  # v3.6
+from modules.music_engine            import MusicEngine, mix_audio                                    # v3.7
 from modules.visual_prompts         import generate_visual_prompts, export_prompts_txt
 from modules.timeline_builder       import build_timeline
 from modules.subtitle_engine        import synthesize_with_subtitles, save_subtitles_json         # v3.5
@@ -104,8 +107,10 @@ def run(
     skip_images: bool = False,
     skip_video_search: bool = False,
     output_dir: Path = None,
+    langs: list = None,
 ) -> Path:
 
+    langs   = langs or ["pt"]
     mode    = get_mode(mode_name)
     ffmpeg  = _get_ffmpeg()
     _banner(mode)
@@ -140,6 +145,19 @@ def run(
     print(f"  Logline: {str(story.get('logline','?'))[:70]}")
     _save(story, out / "03_story.json")
 
+    # ── ETAPA 03b: Hook Intelligence — v4.0 ───────────────────────────────────
+    _step(3, "Hook Intelligence — 3 hooks + score (v4.0)")
+    hooks     = generate_hooks(story, analysis, n=3)
+    best_hook = select_best(hooks)
+    save_hooks(hooks, best_hook, out)
+    for h in hooks:
+        mark = "★" if h.text == best_hook.text else " "
+        print(f"  {mark} [{h.style:9s}] score={h.total:.1f} (cur={h.curiosity} imp={h.impact} ret={h.retention}) {h.text[:45]}")
+    # Injeta o melhor hook na história
+    if best_hook.text:
+        story.setdefault("estrutura", {})["hook"] = best_hook.text
+        _save(story, out / "03_story.json")
+
     # ── ETAPA 04: Roteiro ─────────────────────────────────────────────────────
     _step(4, f"Roteiro profissional — {mode['label']}")
     script = write_script(story, mode)
@@ -153,12 +171,30 @@ def run(
     print(f"  Palavras: {total_w}  |  Preview: {narration.get('narration_full','')[:80]}...")
     _save(narration, out / "05_narration.json")
 
+    # ── ETAPA 05b: Narration Director — humaniza a narração (v4.0) ────────────
+    _step(5, "Narration Director — pausas, ritmo, suspense (v4.0)")
+    narration = direct_narration(narration)
+    save_directed(narration, out)
+    _save(narration, out / "05_narration.json")
+    print(f"  Narração dirigida (pausas/ritmo aplicados)")
+    print(f"  Preview: {narration.get('narration_full','')[:90]}...")
+
     # ── ETAPA 06: Storyboard granular ─────────────────────────────────────────
     _step(6, "Storyboard (cenas ~4s + emoção)")
     storyboard = generate_storyboard(narration, story, mode)
     print(f"  Cenas: {storyboard.get('total_cenas', 0)}  "
           f"(intervalo alvo: {mode.get('scene_interval',4)}s)")
     _save(storyboard, out / "06_storyboard.json")
+
+    # ── ETAPA 06b: Retention Engine — análise pré-render (v4.0) ───────────────
+    _step(6, "Retention Engine — score 0-100 + sugestões (v4.0)")
+    retention = retention_analyze(narration, storyboard, hook_score=best_hook.total)
+    save_retention(retention, out)
+    print(f"  RETENTION SCORE: {retention.score}/100")
+    print(f"  (ritmo={retention.pace_score} tensão={retention.tension_score} "
+          f"exposição={retention.exposition_score} hook={retention.hook_score})")
+    for s in retention.suggestions[:3]:
+        print(f"  → {s}")
 
     # ── ETAPA 07: Scene Analyzer — P1 ─────────────────────────────────────────
     _step(7, "Análise estruturada de cenas (P1)")
@@ -177,53 +213,27 @@ def run(
     print(f"  B-roll marcado:{broll_needed} cenas")
     print(f"  Estilos legenda:{', '.join(styles_used)}")
 
-    # ── ETAPA 08: Image Acquisition — P1+P2 ──────────────────────────────────
-    image_assignments = {}
+    # ── ETAPA 08: Universal Visual Asset Engine — v3.6 ────────────────────────
+    image_assignments, video_assignments = {}, {}
     if not skip_images:
-        _step(8, "Image Acquisition Engine (busca histórica automática)")
-        engine     = ImageAcquisitionEngine(output_dir=out)
-        tmp_tl     = {"scenes": [
-            {"scene_id": c["cena_id"], "image_file": f"assets/image_{c['cena_id']:02d}.jpg"}
-            for c in storyboard.get("cenas", [])
-        ]}
-        _, acq_result = engine.run(storyboard, story, tmp_tl, scene_contexts=scene_contexts)
-        save_acquisition_reports(acq_result, out)
-        image_assignments = {
-            cid: a["local_path"]
-            for cid, a in acq_result.get("assignments", {}).items()
-            if a["status"] == "found"
-        }
-        print(f"\n  {acq_result['found']}/{acq_result['total_scenes']} imagens "
-              f"({acq_result['success_rate']}%)  "
-              f"Fontes: {', '.join(acq_result.get('sources_used', []))}")
+        _step(8, "Universal Visual Asset Engine (vídeo + imagem + documento)")
+        uengine    = UniversalVisualEngine(output_dir=out, prefer_video=not skip_video_search,
+                                           ffmpeg_exe=ffmpeg)
+        va_result  = uengine.run(storyboard, story, scene_contexts)
+        save_reports(va_result, out)
+        image_assignments, video_assignments = extract_assignments(va_result)
+        print(f"\n  {va_result['found']}/{va_result['total_scenes']} ativos "
+              f"({va_result['success_rate']}%)")
+        print(f"  Vídeos: {va_result['video_count']} | Imagens: {va_result['image_count']} "
+              f"| Históricos: {va_result['historical_assets_count']} "
+              f"| Docs: {va_result['document_count']}")
+        print(f"  Mix: {va_result.get('mix_pct', {})}  (alvo {va_result.get('mix_target', {})})")
+        print(f"  Fontes: {', '.join(va_result.get('sources_used', []))}")
     else:
-        print("\n[ETAPA 08] Aquisição de imagens ignorada (--skip-images)")
-        acq_result = {"found": 0, "total_scenes": 0, "missing": 0,
-                       "success_rate": 0, "sources_used": [], "assignments": {}}
-
-    # ── ETAPA 09: Video Acquisition — P4 ──────────────────────────────────────
-    video_assignments = {}
-    if not skip_images and not skip_video_search:
-        _step(9, "Busca de vídeos históricos (P4)")
-        vid_engine = VideoAcquisitionEngine(output_dir=out)
-        found_vids = 0
-        for cid, ctx in scene_contexts.items():
-            kw = {
-                "search_queries": ctx.search_queries[:2],
-                "period":         ctx.period,
-                "subjects":       [ctx.main_object, ctx.character],
-            }
-            # Busca apenas para cenas de alta relevância (conflito/escalada)
-            seg = next((c.get("segmento","") for c in storyboard.get("cenas",[])
-                        if c["cena_id"] == cid), "")
-            if seg in ("conflito", "escalada", "plot_twist"):
-                asset = vid_engine.search_for_scene(kw, cid, max_duration=8.0)
-                if asset:
-                    video_assignments[cid] = asset.local_path
-                    found_vids += 1
-        print(f"  Vídeos históricos encontrados: {found_vids}")
-    else:
-        print("\n[ETAPA 09] Busca de vídeos ignorada")
+        print("\n[ETAPA 08] Aquisição de ativos ignorada (--skip-images)")
+        va_result = {"found": 0, "total_scenes": 0, "missing": 0, "success_rate": 0,
+                     "video_count": 0, "image_count": 0, "historical_assets_count": 0,
+                     "document_count": 0, "sources_used": [], "assignments": {}}
 
     # ── ETAPA 10: Visual Prompts (fallback manual) ────────────────────────────
     _step(10, "Prompts visuais para imagens faltantes")
@@ -263,6 +273,39 @@ def run(
             _generate_silence_wav(out / "audio.wav")
     else:
         print("  Narração vazia, ignorando TTS.")
+
+    # ── ETAPA 12b: Adaptive Music Engine — v3.7 ───────────────────────────────
+    music_info = {"applied": False}
+    audio_path = out / "audio.wav"
+    if audio_path.exists() and not skip_video:
+        _step(12, "Adaptive Music Engine — trilha sonora contextual (v3.7)")
+        try:
+            mengine   = MusicEngine(output_dir=out)
+            emo       = mengine.analyze_dominant_emotion(storyboard, edit_decisions)
+            category  = emo["dominant"]
+            print(f"  Emoção dominante: {category}  (distribuição: {emo['distribution']})")
+            track = mengine.select_track(category, min_duration=30.0)
+            if track:
+                # Backup da narração pura e mixagem com música + ducking
+                narration_only = out / "narration_only.wav"
+                if not narration_only.exists():
+                    import shutil; shutil.copy2(audio_path, narration_only)
+                ok = mix_audio(narration_only, out / track.local_path, audio_path,
+                               ffmpeg_exe=ffmpeg, duck=True)
+                music_info = {
+                    "applied":      ok,
+                    "category":     category,
+                    "source":       track.source,
+                    "title":        track.title,
+                    "ducking":      True,
+                    "music_volume": 0.16,
+                }
+                print(f"  Trilha: [{track.source}] {track.title[:50]}")
+                print(f"  Mixagem: {'OK (ducking)' if ok else 'falhou — narração pura'}")
+            else:
+                print("  Nenhuma trilha encontrada — seguindo só com narração")
+        except Exception as e:
+            print(f"  [música] erro: {e} — seguindo só com narração")
 
     # ── ETAPA 13: Auditoria de renderização — P8 ──────────────────────────────
     _step(13, "Auditoria de renderização (P8)")
@@ -313,10 +356,29 @@ def run(
     _step(16, "Relatório de qualidade (P9)")
     audio_dur = audit_report.get("audio_duration", 0.0)
     q_report  = generate_quality_report(
-        timeline, audio_dur, acq_result, video_path, out, ffmpeg,
+        timeline, audio_dur, va_result, video_path, out, ffmpeg,
         edit_decisions=edit_decisions, scene_contexts=scene_contexts,
+        visual_assets_result=va_result, music_info=music_info,
+        hook_score=best_hook.total, retention_score_100=retention.score,
     )
     _print_quality_summary(q_report)
+
+    # ── ETAPA 17: Versões multi-idioma — v3.8 (sob demanda) ───────────────────
+    extra_langs = [l for l in (langs or ["pt"]) if l != "pt"]
+    if extra_langs and not skip_video:
+        _step(17, f"Versões adicionais de idioma: {', '.join(extra_langs)}")
+        from modules.multilang import generate_all_languages
+        music_path = out / "music.mp3"
+        results = generate_all_languages(
+            extra_langs, out,
+            storyboard=storyboard, narration=narration, metadata=metadata,
+            mode_config=mode, image_assignments=image_assignments,
+            video_assignments=video_assignments,
+            music_path=music_path if music_path.exists() else None,
+            ffmpeg_exe=ffmpeg, skip_video=skip_video,
+        )
+        for r in results:
+            print(f"  [{r['lang']}] {r.get('status')}: {r.get('video_path','')}")
 
     # ── Sumário final ─────────────────────────────────────────────────────────
     elapsed = time.time() - t0
@@ -375,6 +437,22 @@ def _print_quality_summary(report: dict):
     print(f"  Hist. acc.:    {scores.get('historical_accuracy_score', 0)}/10")
     print(f"  Retenção:      {scores.get('retention_estimate', 0)}/10")
     print(f"  GERAL:         {scores.get('overall', 0)}/10")
+    print(f"  --- Ativos (v3.6) ---")
+    print(f"  Vídeos: {report.get('video_count',0)} | Imagens: {report.get('image_count',0)} "
+          f"| Históricos: {report.get('historical_assets_count',0)} "
+          f"| Docs: {report.get('document_count',0)} | B-roll: {report.get('broll_count',0)}")
+    print(f"  Cobertura: {report.get('coverage_score',0)}/10  Mix: {report.get('asset_mix_pct',{})}")
+    print(f"  --- Qualidade Visual (v3.7) ---")
+    print(f"  Qualidade: {scores.get('visual_quality_score',0)}/10  "
+          f"Rejeitados: {report.get('low_resolution_rejected',0)}  "
+          f"Upscaled: {report.get('upscaled_assets',0)}  "
+          f"Res.média: {report.get('average_resolution','?')}")
+    print(f"  --- Trilha Sonora (v3.7) ---")
+    print(f"  Música: {report.get('music_category','none')} [{report.get('music_source','none')}] "
+          f"score={scores.get('music_score',0)}/10  balanço={scores.get('audio_balance_score',0)}/10")
+    print(f"  --- Retenção (v4.0) ---")
+    print(f"  RETENTION SCORE: {report.get('retention_score','?')}/100  "
+          f"Hook: {report.get('hook_score','?')}/10  CTR estimado: {report.get('estimated_ctr','?')}")
     if report.get("issues"):
         for issue in report["issues"]:
             print(f"  [!] {issue}")
@@ -406,6 +484,8 @@ if __name__ == "__main__":
     parser.add_argument("--skip-video-search", action="store_true",
                         help="Pular busca de vídeos históricos")
     parser.add_argument("--output-dir",        default=None)
+    parser.add_argument("--langs", default="pt",
+                        help="Idiomas separados por vírgula (ex: pt,en,es). Padrão: pt")
     args = parser.parse_args()
 
     run(
@@ -416,4 +496,5 @@ if __name__ == "__main__":
         skip_images=args.skip_images,
         skip_video_search=args.skip_video_search,
         output_dir=args.output_dir,
+        langs=[l.strip() for l in args.langs.split(",") if l.strip()],
     )

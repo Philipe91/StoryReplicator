@@ -211,6 +211,47 @@ class UniversalVisualEngine:
         t = text.lower()
         return any(a in t for a in self.subject_anchor)
 
+    # Termos genéricos que não distinguem o MOMENTO da cena
+    _SCENE_GENERIC = {
+        "historical", "photograph", "photo", "vintage", "archival", "footage",
+        "newsreel", "documentary", "image", "picture", "scene", "old", "antique",
+        "1936", "1937", "1935", "1900s", "mid", "the", "of", "a", "an", "and", "with",
+    }
+    # Indícios de que a imagem é um RETRATO DE PESSOA (não objeto/lugar/evento)
+    _PERSON_HINTS = {
+        "portrait", "president", "von", "captain", "commander", "crew member",
+        "official", "politician", "general", "minister", "man ", "woman ",
+        "headshot", "posing", "bust",
+    }
+    # Termos que indicam que a CENA é sobre pessoa(s)
+    _SCENE_ABOUT_PERSON = {
+        "passenger", "crew", "survivor", "people", "man", "woman", "captain",
+        "person", "portrait", "victim", "officer",
+    }
+
+    def _scene_terms(self, ctx) -> list:
+        """
+        Termos DISTINTIVOS da cena (do que a narração mostra naquele momento):
+        ex 'flying', 'interior', 'wreckage', 'structure'. Excluem a âncora de
+        assunto e termos genéricos. Usados para casar a imagem com o MOMENTO da fala.
+        """
+        import re
+        primary = ctx.search_queries[0] if ctx.search_queries else ""
+        terms = []
+        for w in re.findall(r"[a-z]{4,}", primary.lower()):
+            if w in self._SCENE_GENERIC:        continue
+            if w in self.subject_anchor:        continue
+            terms.append(w)
+        return terms
+
+    def _scene_is_about_person(self, ctx) -> bool:
+        primary = (ctx.search_queries[0] if ctx.search_queries else "").lower()
+        return any(p in primary for p in self._SCENE_ABOUT_PERSON)
+
+    def _looks_like_person(self, text: str) -> bool:
+        t = text.lower()
+        return any(h in t for h in self._PERSON_HINTS)
+
     def _acquire_for_scene(self, ctx, cid: int, want_video_first: bool) -> VisualAsset | None:
         candidates: list[VisualAsset] = []
 
@@ -235,10 +276,26 @@ class UniversalVisualEngine:
         candidates.sort(key=lambda a: a.score, reverse=True)
 
         # FILTRO DE RELEVÂNCIA: só considera candidatos que mencionam o assunto
-        # (âncora). Sem isso, buscas genéricas trariam imagens erradas (ex: um
-        # burro numa história sobre o Hindenburg). Precisão > cobertura.
+        # (âncora). Sem isso, buscas genéricas trariam imagens erradas.
         relevant = [c for c in candidates if self._matches_anchor(f"{c.title} {c.description}")]
-        pool = relevant if relevant else []   # se nada bate a âncora, deixa p/ fill_gaps
+
+        # PRECISÃO TEMPORAL/CONTEXTUAL (genérico p/ qualquer caso):
+        # ordena preferindo candidatos que batem os TERMOS DISTINTIVOS da cena
+        # (o momento exato da fala) e penaliza retratos de pessoa quando a cena
+        # NÃO é sobre pessoa (ex: foto de gente durante a fala sobre "tamanho").
+        scene_terms      = self._scene_terms(ctx)
+        scene_has_person = self._scene_is_about_person(ctx)
+
+        def rank(c):
+            text   = f"{c.title} {c.description}".lower()
+            n_term = sum(1 for t in scene_terms if t in text)   # casa o momento
+            person_penalty = 0
+            if not scene_has_person and self._looks_like_person(text):
+                person_penalty = -1                              # foto de pessoa fora de hora
+            return (person_penalty, n_term, c.score)
+
+        relevant.sort(key=rank, reverse=True)
+        pool = relevant   # se vazio, vai p/ fill_gaps
 
         # DEDUP: pula candidatos já usados em outra cena (variedade + mescla).
         for cand in pool[:18]:
@@ -256,11 +313,13 @@ class UniversalVisualEngine:
         return ident or asset.url
 
     # Termos genéricos que poluem buscas no Wikimedia (queries longas falham)
+    # Genéricos REMOVIDOS da query (não distinguem nada). NÃO inclui termos de
+    # momento como 'flying', 'landing', 'interior', 'wreckage' — esses são
+    # distintivos e ajudam a achar a imagem do instante certo da fala.
     _GENERIC_TERMS = {
         "historical", "photograph", "photo", "vintage", "archival", "footage",
         "newsreel", "documentary", "image", "picture", "scene", "old", "antique",
         "1936", "1937", "1935", "1900s", "mid", "the", "of", "a", "an", "and",
-        "flying", "over",
     }
 
     def _shorten_query(self, query: str) -> str:

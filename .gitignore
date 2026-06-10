@@ -46,3 +46,8 @@ render_30s.py
 render_v37.py
 render_v4_compare.py
 render_hindenburg.py
+
+# Arquivos compactados / binários soltos
+*.rar
+*.zip
+*.7z

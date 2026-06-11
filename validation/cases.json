@@ -1,0 +1,132 @@
+[
+{
+  "id": "01_ponzi", "categoria": "Golpe histórico",
+  "story": {"titulo": "O Homem que Inventou a Fraude Perfeita", "epoca_local": "Boston, EUA, 1920",
+            "personagem_principal": {"nome": "Charles Ponzi", "descricao": "imigrante italiano carismático", "motivacao": "ficar rico rápido"}},
+  "cenas": [
+    {"segmento":"hook","emotion":"mystery","narracao":"Como um único homem roubou milhões prometendo o impossível?","descricao_visual":"Charles Ponzi portrait 1920","legenda":"A fraude perfeita"},
+    {"segmento":"contexto","emotion":"curiosity","narracao":"Boston, mil novecentos e vinte. Charles Ponzi prometia dobrar o dinheiro em noventa dias.","descricao_visual":"Boston street 1920 crowd","legenda":"Dobrar o dinheiro"},
+    {"segmento":"conflito","emotion":"tension","narracao":"Mas não havia investimento nenhum. Ele pagava os antigos com o dinheiro dos novos.","descricao_visual":"1920 money cash dollars","legenda":"Não havia investimento"},
+    {"segmento":"escalada","emotion":"push_in","narracao":"De repente, multidões faziam fila para entregar suas economias. Ponzi faturava milhões por semana.","descricao_visual":"crowd bank line 1920","legenda":"Milhões por semana"},
+    {"segmento":"plot_twist","emotion":"revelation","narracao":"Mas o que ninguém esperava: um jornal investigou e tudo desabou em um único dia.","descricao_visual":"1920 newspaper headline fraud","legenda":"Tudo desabou"},
+    {"segmento":"cta","emotion":"resolution","narracao":"Até hoje, o golpe leva o nome dele: esquema Ponzi. Segue para mais histórias reais.","descricao_visual":"Charles Ponzi arrested 1920","legenda":"Esquema Ponzi"}
+  ]
+},
+{
+  "id": "02_abagnale", "categoria": "Golpe histórico",
+  "story": {"titulo": "O Garoto que Enganou o Mundo Inteiro", "epoca_local": "Estados Unidos, 1960",
+            "personagem_principal": {"nome": "Frank Abagnale", "descricao": "jovem falsificador genial", "motivacao": "viver de forma extraordinária"}},
+  "cenas": [
+    {"segmento":"hook","emotion":"mystery","narracao":"Aos dezesseis anos, ele já tinha enganado bancos, hospitais e companhias aéreas.","descricao_visual":"1960s airport pilot uniform","legenda":"Apenas 16 anos"},
+    {"segmento":"contexto","emotion":"curiosity","narracao":"Estados Unidos, anos sessenta. Frank Abagnale fugiu de casa com um talento perigoso.","descricao_visual":"1960s teenager suit vintage","legenda":"Um talento perigoso"},
+    {"segmento":"conflito","emotion":"tension","narracao":"Ele se passava por piloto, médico e advogado. Falsificava cheques perfeitos.","descricao_visual":"1960s forged check document","legenda":"Cheques perfeitos"},
+    {"segmento":"escalada","emotion":"push_in","narracao":"De repente, o FBI estava em sua cola. Ele cruzou o mundo em vinte e seis países.","descricao_visual":"1960s commercial airplane vintage","legenda":"O FBI na cola"},
+    {"segmento":"plot_twist","emotion":"revelation","narracao":"Mas o que ninguém esperava: depois de preso, o FBI o contratou para caçar fraudes.","descricao_visual":"FBI agents 1970s office","legenda":"O FBI o contratou"},
+    {"segmento":"cta","emotion":"resolution","narracao":"Hoje ele é consultor de segurança. Segue para mais histórias inacreditáveis.","descricao_visual":"vintage check fraud document","legenda":"De vigarista a consultor"}
+  ]
+},
+{
+  "id": "03_mike", "categoria": "História inacreditável",
+  "story": {"titulo": "A Galinha que Viveu Sem Cabeça", "epoca_local": "Colorado, EUA, 1945",
+            "personagem_principal": {"nome": "Mike", "descricao": "uma galinha comum", "motivacao": "sobreviver"}},
+  "cenas": [
+    {"segmento":"hook","emotion":"mystery","narracao":"Esta galinha viveu dezoito meses depois de perder a cabeça.","descricao_visual":"chicken farm 1940s photograph","legenda":"18 meses sem cabeça"},
+    {"segmento":"contexto","emotion":"curiosity","narracao":"Colorado, mil novecentos e quarenta e cinco. Um fazendeiro preparava o jantar.","descricao_visual":"1940s farm Colorado rural","legenda":"Colorado, 1945"},
+    {"segmento":"conflito","emotion":"tension","narracao":"Mas o machado falhou. A galinha sobreviveu, sem cabeça, e continuou andando.","descricao_visual":"vintage farm axe 1940s","legenda":"O machado falhou"},
+    {"segmento":"escalada","emotion":"push_in","narracao":"De repente, Mike virou estrela. O fazendeiro o alimentava com conta-gotas e viajava o país.","descricao_visual":"1940s circus sideshow crowd","legenda":"Mike virou estrela"},
+    {"segmento":"plot_twist","emotion":"revelation","narracao":"Mas o que ninguém esperava: o machado poupou o tronco cerebral, que controla o essencial.","descricao_visual":"vintage anatomy diagram 1940s","legenda":"O tronco cerebral"},
+    {"segmento":"cta","emotion":"resolution","narracao":"Até hoje há um festival em sua homenagem. Segue para mais histórias reais.","descricao_visual":"small town festival vintage","legenda":"Um festival real"}
+  ]
+},
+{
+  "id": "04_sullivan", "categoria": "História inacreditável",
+  "story": {"titulo": "O Homem que Sobreviveu a Sete Raios", "epoca_local": "Virgínia, EUA, 1942-1977",
+            "personagem_principal": {"nome": "Roy Sullivan", "descricao": "guarda-florestal americano", "motivacao": "apenas viver"}},
+  "cenas": [
+    {"segmento":"hook","emotion":"mystery","narracao":"Sete vezes um raio o atingiu. Sete vezes ele sobreviveu.","descricao_visual":"lightning storm dramatic sky","legenda":"Atingido 7 vezes"},
+    {"segmento":"contexto","emotion":"curiosity","narracao":"Virgínia, Estados Unidos. Roy Sullivan era guarda-florestal de um parque nacional.","descricao_visual":"1950s park ranger forest","legenda":"Roy Sullivan, guarda"},
+    {"segmento":"conflito","emotion":"tension","narracao":"Mas algo nele atraía as tempestades. O primeiro raio queimou sua perna.","descricao_visual":"dark storm clouds mountains","legenda":"Atraía tempestades"},
+    {"segmento":"escalada","emotion":"push_in","narracao":"De repente, aconteceu de novo. E de novo. Cabelo em chamas, sobrancelhas queimadas, ano após ano.","descricao_visual":"lightning strike forest dramatic","legenda":"De novo. E de novo."},
+    {"segmento":"plot_twist","emotion":"revelation","narracao":"Mas o que ninguém esperava: o recorde dele entrou para o livro dos recordes mundiais.","descricao_visual":"vintage record book 1970s","legenda":"Recorde mundial"},
+    {"segmento":"cta","emotion":"resolution","narracao":"A probabilidade era de uma em vinte e dois trilhões. Segue para mais histórias reais.","descricao_visual":"lightning storm landscape","legenda":"1 em 22 trilhões"}
+  ]
+},
+{
+  "id": "05_alcatraz", "categoria": "História inacreditável",
+  "story": {"titulo": "A Única Fuga de Alcatraz", "epoca_local": "São Francisco, EUA, 1962",
+            "personagem_principal": {"nome": "Frank Morris", "descricao": "prisioneiro engenhoso", "motivacao": "liberdade"}},
+  "cenas": [
+    {"segmento":"hook","emotion":"mystery","narracao":"Da prisão mais segura do mundo, três homens fugiram e nunca foram encontrados.","descricao_visual":"Alcatraz prison island photograph","legenda":"A prisão mais segura"},
+    {"segmento":"contexto","emotion":"curiosity","narracao":"São Francisco, mil novecentos e sessenta e dois. Alcatraz era considerada impossível de escapar.","descricao_visual":"Alcatraz cell block interior","legenda":"Impossível escapar"},
+    {"segmento":"conflito","emotion":"tension","narracao":"Mas Frank Morris tinha um plano. Cavaram as paredes com colheres durante meses.","descricao_visual":"prison cell wall hole vintage","legenda":"Cavaram com colheres"},
+    {"segmento":"escalada","emotion":"push_in","narracao":"De repente, na noite da fuga, deixaram cabeças falsas nas camas e sumiram pelo mar.","descricao_visual":"Alcatraz escape raft 1962","legenda":"Cabeças falsas nas camas"},
+    {"segmento":"plot_twist","emotion":"revelation","narracao":"Mas o que ninguém esperava: até hoje, sessenta anos depois, ninguém sabe se sobreviveram.","descricao_visual":"San Francisco bay cold water","legenda":"60 anos de mistério"},
+    {"segmento":"cta","emotion":"resolution","narracao":"O caso segue aberto no FBI. Segue para mais histórias inacreditáveis.","descricao_visual":"Alcatraz prison aerial view","legenda":"Caso ainda aberto"}
+  ]
+},
+{
+  "id": "06_dyatlov", "categoria": "Mistério",
+  "story": {"titulo": "A Tragédia que a Ciência Não Explica", "epoca_local": "Montanhas Urais, Rússia, 1959",
+            "personagem_principal": {"nome": "expedição Dyatlov", "descricao": "nove jovens alpinistas", "motivacao": "explorar a montanha"}},
+  "cenas": [
+    {"segmento":"hook","emotion":"mystery","narracao":"Nove alpinistas rasgaram suas barracas por dentro e fugiram para a morte na neve.","descricao_visual":"snowy Ural mountains expedition 1959","legenda":"Fugiram para a neve"},
+    {"segmento":"contexto","emotion":"curiosity","narracao":"Montanhas Urais, mil novecentos e cinquenta e nove. Nove estudantes experientes acamparam.","descricao_visual":"1959 mountaineers tent snow","legenda":"Urais, 1959"},
+    {"segmento":"conflito","emotion":"tension","narracao":"Mas algo os fez fugir descalços no escuro, a vinte graus negativos.","descricao_visual":"abandoned tent snow night","legenda":"Descalços no escuro"},
+    {"segmento":"escalada","emotion":"push_in","narracao":"De repente, os corpos apareceram. Alguns com ferimentos estranhos, radiação e sem os olhos.","descricao_visual":"snowy mountain search rescue 1959","legenda":"Ferimentos inexplicáveis"},
+    {"segmento":"plot_twist","emotion":"revelation","narracao":"Mas o que ninguém esperava: décadas depois, a causa oficial ainda é contestada.","descricao_visual":"Dyatlov pass memorial monument","legenda":"Causa contestada"},
+    {"segmento":"cta","emotion":"resolution","narracao":"Avalanche? Pânico? Ninguém tem certeza. Segue para mais mistérios reais.","descricao_visual":"Ural mountains winter landscape","legenda":"Ninguém tem certeza"}
+  ]
+},
+{
+  "id": "07_maryceleste", "categoria": "Mistério",
+  "story": {"titulo": "O Navio Encontrado Sem Ninguém a Bordo", "epoca_local": "Oceano Atlântico, 1872",
+            "personagem_principal": {"nome": "Mary Celeste", "descricao": "navio mercante americano", "motivacao": "cruzar o Atlântico"}},
+  "cenas": [
+    {"segmento":"hook","emotion":"mystery","narracao":"Encontraram o navio navegando sozinho. A tripulação havia simplesmente desaparecido.","descricao_visual":"Mary Celeste ship 1872 engraving","legenda":"Ninguém a bordo"},
+    {"segmento":"contexto","emotion":"curiosity","narracao":"Oceano Atlântico, mil oitocentos e setenta e dois. O Mary Celeste partiu de Nova York.","descricao_visual":"19th century sailing ship ocean","legenda":"Atlântico, 1872"},
+    {"segmento":"conflito","emotion":"tension","narracao":"Mas um mês depois, outro navio o encontrou intacto, com a comida ainda na mesa.","descricao_visual":"old ship deck interior 1800s","legenda":"Comida ainda na mesa"},
+    {"segmento":"escalada","emotion":"push_in","narracao":"De repente, perceberam: dez pessoas haviam sumido, e o único bote salva-vidas faltava.","descricao_visual":"vintage lifeboat sailing ship","legenda":"10 pessoas sumiram"},
+    {"segmento":"plot_twist","emotion":"revelation","narracao":"Mas o que ninguém esperava: nenhum corpo, nenhum sinal de luta, jamais foi encontrado.","descricao_visual":"stormy atlantic ocean waves","legenda":"Nenhum corpo"},
+    {"segmento":"cta","emotion":"resolution","narracao":"É o maior mistério marítimo da história. Segue para mais mistérios reais.","descricao_visual":"Mary Celeste ship illustration","legenda":"O maior mistério do mar"}
+  ]
+},
+{
+  "id": "08_earhart", "categoria": "Mistério",
+  "story": {"titulo": "A Aviadora que Sumiu no Céu", "epoca_local": "Oceano Pacífico, 1937",
+            "personagem_principal": {"nome": "Amelia Earhart", "descricao": "pioneira da aviação", "motivacao": "dar a volta ao mundo voando"}},
+  "cenas": [
+    {"segmento":"hook","emotion":"mystery","narracao":"A aviadora mais famosa do mundo decolou e nunca mais foi vista.","descricao_visual":"Amelia Earhart airplane 1937","legenda":"Nunca mais vista"},
+    {"segmento":"contexto","emotion":"curiosity","narracao":"Mil novecentos e trinta e sete. Amelia Earhart tentava dar a volta ao mundo.","descricao_visual":"Amelia Earhart portrait pilot 1937","legenda":"A volta ao mundo"},
+    {"segmento":"conflito","emotion":"tension","narracao":"Mas sobre o Pacífico, faltando combustível, sua voz sumiu no rádio.","descricao_visual":"vintage aircraft cockpit 1930s","legenda":"A voz sumiu no rádio"},
+    {"segmento":"escalada","emotion":"push_in","narracao":"De repente, a maior busca naval da história começou. Nada foi encontrado.","descricao_visual":"1930s navy ship pacific search","legenda":"A maior busca da história"},
+    {"segmento":"plot_twist","emotion":"revelation","narracao":"Mas o que ninguém esperava: oitenta anos depois, o desaparecimento segue sem solução.","descricao_visual":"pacific ocean island aerial","legenda":"80 anos depois"},
+    {"segmento":"cta","emotion":"resolution","narracao":"Pousou numa ilha deserta? Caiu no mar? Segue para mais mistérios reais.","descricao_visual":"Amelia Earhart Lockheed airplane","legenda":"Ilha ou mar?"}
+  ]
+},
+{
+  "id": "09_hindenburg", "categoria": "Acidente histórico",
+  "story": {"titulo": "O Gigante que Desapareceu em 37 Segundos", "epoca_local": "Lakehurst, Nova Jersey, EUA, 1937",
+            "personagem_principal": {"nome": "Hindenburg", "descricao": "o maior dirigível já construído", "motivacao": "símbolo de poder"}},
+  "cenas": [
+    {"segmento":"hook","emotion":"mystery","narracao":"O maior objeto voador já construído desapareceu em trinta e sete segundos.","descricao_visual":"Hindenburg airship flying 1937","legenda":"37 segundos"},
+    {"segmento":"contexto","emotion":"curiosity","narracao":"Mil novecentos e trinta e sete. O Hindenburg se aproximava de Nova Jersey, orgulho da Alemanha.","descricao_visual":"Hindenburg airship over city 1937","legenda":"O orgulho da Alemanha"},
+    {"segmento":"conflito","emotion":"tension","narracao":"A bordo, noventa e sete pessoas em luxo. Mas o gigante era cheio de hidrogênio inflamável.","descricao_visual":"Hindenburg interior passenger lounge","legenda":"Cheio de hidrogênio"},
+    {"segmento":"escalada","emotion":"push_in","narracao":"De repente, durante o pouso, uma chama. Em segundos, o céu virou fogo.","descricao_visual":"Hindenburg disaster explosion fire 1937","legenda":"O céu virou fogo"},
+    {"segmento":"plot_twist","emotion":"revelation","narracao":"Mas o que ninguém esperava: sessenta e dois sobreviveram àquele inferno.","descricao_visual":"Hindenburg disaster wreckage 1937","legenda":"62 sobreviveram"},
+    {"segmento":"cta","emotion":"resolution","narracao":"Até hoje ninguém sabe o que iniciou o fogo. Segue para mais histórias reais.","descricao_visual":"Hindenburg disaster newspaper 1937","legenda":"Causa desconhecida"}
+  ]
+},
+{
+  "id": "10_titanic", "categoria": "Acidente histórico",
+  "story": {"titulo": "O Navio que Não Podia Afundar", "epoca_local": "Oceano Atlântico Norte, 1912",
+            "personagem_principal": {"nome": "Titanic", "descricao": "o maior navio do mundo", "motivacao": "cruzar o Atlântico"}},
+  "cenas": [
+    {"segmento":"hook","emotion":"mystery","narracao":"Diziam que nem Deus afundaria este navio. Levou duas horas e quarenta minutos.","descricao_visual":"Titanic ship 1912 photograph","legenda":"Impossível de afundar"},
+    {"segmento":"contexto","emotion":"curiosity","narracao":"Mil novecentos e doze. O Titanic partiu da Inglaterra, o maior navio já construído.","descricao_visual":"Titanic ship departure 1912","legenda":"O maior navio do mundo"},
+    {"segmento":"conflito","emotion":"tension","narracao":"Mas faltavam botes salva-vidas para todos. E a noite estava escura e gelada.","descricao_visual":"Titanic deck lifeboats 1912","legenda":"Botes insuficientes"},
+    {"segmento":"escalada","emotion":"push_in","narracao":"De repente, à meia-noite, um iceberg. A água invadiu os compartimentos.","descricao_visual":"iceberg north atlantic ocean night","legenda":"Meia-noite: o iceberg"},
+    {"segmento":"plot_twist","emotion":"revelation","narracao":"Mas o que ninguém esperava: mil e quinhentas pessoas morreram nas águas geladas.","descricao_visual":"Titanic sinking illustration 1912","legenda":"1500 mortos"},
+    {"segmento":"cta","emotion":"resolution","narracao":"Os destroços só foram achados setenta e três anos depois. Segue para mais histórias reais.","descricao_visual":"Titanic newspaper headline 1912","legenda":"Achado 73 anos depois"}
+  ]
+}
+]

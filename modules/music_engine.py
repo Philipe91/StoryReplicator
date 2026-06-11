@@ -20,6 +20,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import requests
+from modules.request_manager import ThrottledSession
 
 from config import (
     MUSIC_CATEGORIES, EMOTION_TO_MUSIC, SEGMENT_TO_MUSIC, MUSIC_SEARCH_TERMS,
@@ -68,8 +69,7 @@ class MusicEngine:
         self.dl_dir     = self.cache_dir / "music_downloads"
         for d in (self.meta_dir, self.dl_dir):
             d.mkdir(parents=True, exist_ok=True)
-        self.session = requests.Session()
-        self.session.headers["User-Agent"] = "StoryReplicator/3.7 (educational)"
+        self.session = ThrottledSession()
 
     # ── Análise emocional ────────────────────────────────────────────────────
 

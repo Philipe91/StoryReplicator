@@ -22,6 +22,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import requests
+from modules.request_manager import ThrottledSession
 
 
 # Gatilho (termos PT/EN na narração) → categoria de SFX + termo de busca
@@ -80,8 +81,7 @@ class SoundDesignEngine:
         self.dl_dir     = self.cache_dir / "sfx_downloads"
         for d in (self.sfx_dir, self.meta_dir, self.dl_dir):
             d.mkdir(parents=True, exist_ok=True)
-        self.session = requests.Session()
-        self.session.headers["User-Agent"] = "StoryReplicator/4.0 (educational)"
+        self.session = ThrottledSession()
 
     # ── Detecção de gatilhos ──────────────────────────────────────────────────
 

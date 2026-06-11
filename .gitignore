@@ -51,3 +51,7 @@ render_hindenburg.py
 *.rar
 *.zip
 *.7z
+
+# Validação (relatórios versionados, assets de teste não)
+validation/run_battery.py
+validation/build_representative.py

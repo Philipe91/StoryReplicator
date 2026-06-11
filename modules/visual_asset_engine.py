@@ -19,6 +19,7 @@ from dataclasses import asdict
 from pathlib import Path
 
 import requests
+from modules.request_manager import ThrottledSession
 
 from config import (
     ASSET_PRIORITY, ASSET_DURATION_MIN, ASSET_DURATION_MAX,
@@ -54,8 +55,7 @@ class UniversalVisualEngine:
         for d in (self.assets_dir, self.meta_dir, self.dl_dir):
             d.mkdir(parents=True, exist_ok=True)
 
-        self.session = requests.Session()
-        self.session.headers["User-Agent"] = "StoryReplicator/3.6 (educational research)"
+        self.session = ThrottledSession()
         self.prefer_video = prefer_video
 
         # v4.0 — deduplicação de assets entre cenas (variedade visual)
@@ -81,11 +81,15 @@ class UniversalVisualEngine:
         scenes = storyboard.get("cenas", [])
         active = prov.active_providers()
         print(f"  Providers ativos: {', '.join(k for k,v in active.items() if v)}")
+        if self.prefer_video and not (active.get("pexels") or active.get("pixabay")):
+            print("  [aviso] Pexels/Pixabay sem chave — vídeo limitado a Archive. "
+                  "Para 40-60% vídeo, defina PEXELS_API_KEY/PIXABAY_API_KEY (grátis).")
 
         # ÂNCORA DE ASSUNTO: termos-chave que TODA imagem/vídeo deve mencionar.
         # Garante precisão — sem isso, buscas genéricas trazem imagens erradas.
         self.subject_anchor = self._extract_subject_anchor(storyboard, story)
         print(f"  Âncora de assunto: {self.subject_anchor}")
+        self._scene_contexts = scene_contexts   # guardado para o B-Roll Engine
 
         assignments = {}
         mix_counter = {"video": 0, "image": 0, "document": 0}
@@ -135,37 +139,97 @@ class UniversalVisualEngine:
 
     def _fill_gaps(self, assignments: dict) -> None:
         """
-        Para cada cena sem ativo, copia uma imagem boa já baixada (a de maior
-        score), garantindo cobertura visual total sem telas pretas.
+        Para cada cena sem ativo: PRIMEIRO busca B-roll contextual (variedade
+        real); só reusa imagem como último recurso. Objetivo: reuso < 15%.
         """
-        found_imgs = [
-            a for a in assignments.values()
-            if a.get("status") == "found" and a.get("asset_type") == "image"
-        ]
+        contexts = getattr(self, "_scene_contexts", {}) or {}
+
+        for cid, a in list(assignments.items()):
+            if a.get("status") == "found":
+                continue
+            ctx = contexts.get(cid)
+            broll = self._acquire_broll(ctx, cid) if ctx else None
+            if broll:
+                self._used_keys.add(self._asset_key(broll))
+                assignments[cid] = {
+                    "cena_id": cid, "status": "found", "asset_type": broll.asset_type,
+                    "category": "image_complement", "source": f"broll:{broll.source}",
+                    "url": broll.url, "local_path": broll.local_path,
+                    "duration": round(broll.duration, 2), "score": broll.score,
+                    "license": broll.license,
+                }
+                print(f"    + cena {cid:02d}: B-roll contextual [{broll.source}]")
+
+        # Reuso só para o que sobrou sem B-roll (último recurso)
+        found_imgs = [a for a in assignments.values()
+                      if a.get("status") == "found" and a.get("asset_type") == "image"
+                      and not str(a.get("source","")).startswith("broll")]
+        if not found_imgs:
+            found_imgs = [a for a in assignments.values()
+                          if a.get("status") == "found" and a.get("asset_type") == "image"]
         if not found_imgs:
             return
         found_imgs.sort(key=lambda a: a.get("score", 0), reverse=True)
         pool = [self.output_dir / a["local_path"] for a in found_imgs]
-
         i = 0
         for cid, a in assignments.items():
             if a.get("status") == "found":
                 continue
-            src  = pool[i % len(pool)]
             dest = self.assets_dir / f"image_{cid:02d}.jpg"
             try:
                 import shutil
-                shutil.copy2(src, dest)
+                shutil.copy2(pool[i % len(pool)], dest)
                 assignments[cid] = {
                     "cena_id": cid, "status": "found", "asset_type": "image",
                     "category": "image_complement", "source": "reused",
                     "url": "", "local_path": f"assets/image_{cid:02d}.jpg",
                     "duration": 0.0, "score": 0.0, "license": "reused",
                 }
-                print(f"    ⟳ cena {cid:02d}: reusando imagem de qualidade (sem tela preta)")
+                print(f"    ⟳ cena {cid:02d}: reuso (último recurso)")
                 i += 1
             except Exception:
                 pass
+
+    # ── B-Roll Engine: busca contextual sem âncora estrita (P4) ──────────────────
+
+    def _acquire_broll(self, ctx, cid: int) -> "VisualAsset | None":
+        """
+        Busca B-roll CONTEXTUAL (período/local/objeto/emoção) — sem exigir o nome
+        do assunto. Dá variedade real (movimento e cenário de época) em vez de
+        repetir imagem. Tenta vídeo stock primeiro (Pexels/Pixabay), depois imagem.
+        """
+        queries = self._broll_queries(ctx)
+        candidates = []
+        for q in queries[:3]:
+            candidates.extend(self._cached_search(q, want_video=True))   # stock/archive
+            candidates.extend(self._cached_search(q, want_video=False))  # imagem contextual
+            if len(candidates) >= 12:
+                break
+
+        # B-roll NÃO usa âncora (é contextual). Só evita duplicar e prioriza vídeo.
+        fresh = [c for c in candidates if self._asset_key(c) not in self._used_keys]
+        fresh.sort(key=lambda c: (c.asset_type == "video",
+                                  qf.visual_quality_weight(c), c.score), reverse=True)
+        for cand in fresh[:8]:
+            if self._download(cand, cid):
+                return cand
+        return None
+
+    def _broll_queries(self, ctx) -> list:
+        """Queries genéricas de B-roll a partir do contexto da cena."""
+        period = (getattr(ctx, "period", "") or "").strip()
+        loc    = (getattr(ctx, "location", "") or "").strip()
+        obj    = (getattr(ctx, "main_object", "") or "").strip()
+        emo    = getattr(ctx, "emotion", "") or ""
+        qs = []
+        if obj and period:  qs.append(f"{period} {obj}")
+        if loc and period:  qs.append(f"{period} {loc} street")
+        if period:          qs.append(f"{period} city archival")
+        emo_broll = {"tension":"dark dramatic","mystery":"fog mysterious",
+                     "revelation":"light reveal","push_in":"dramatic"}.get(emo, "vintage cinematic")
+        qs.append(f"{emo_broll} background")
+        if loc:             qs.append(f"{loc} landscape")
+        return [q for q in qs if len(q) > 4] or ["vintage archival footage"]
 
     # ── Aquisição de uma cena (segue a ordem de prioridade) ──────────────────────
 

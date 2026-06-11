@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Optional
 
 import requests
+from modules.request_manager import ThrottledSession
 
 
 @dataclass
@@ -49,8 +50,7 @@ class VideoAcquisitionEngine:
         for d in [self.assets_dir, self.meta_dir, self.vid_cache]:
             d.mkdir(parents=True, exist_ok=True)
 
-        self.session = requests.Session()
-        self.session.headers["User-Agent"] = "StoryReplicator/2.0 (educational research)"
+        self.session = ThrottledSession()
 
     def search_for_scene(self, keywords: dict, cena_id: int,
                           max_duration: float = 15.0) -> Optional[VideoAsset]:

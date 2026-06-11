@@ -60,7 +60,9 @@ class UniversalVisualEngine:
 
         # v4.0 — deduplicação de assets entre cenas (variedade visual)
         self._used_keys = set()
-        self.subject_anchor = []   # termos-chave do assunto (precisão visual)
+        self.subject_anchor = []    # termos-chave do assunto (precisão visual)
+        self.subject_primary = []   # nome próprio do caso (validação estrita)
+        self.reject_modern = False  # caso antigo: rejeita foto moderna colorida
 
         # v3.7 — estatísticas do Visual Quality Filter
         self.quality_stats = {
@@ -91,6 +93,16 @@ class UniversalVisualEngine:
         print(f"  Âncora de assunto: {self.subject_anchor}")
         self._scene_contexts = scene_contexts   # guardado para o B-Roll Engine
 
+        # Caso histórico antigo (< 1970) → rejeita foto MODERNA colorida
+        # (museu/marco/réplica). Material de época é P&B/sépia.
+        import re as _re
+        _yrs = _re.findall(r"\b(1[5-9]\d\d|20[0-2]\d)\b",
+                           story.get("epoca_local", "") + " " +
+                           json.dumps(story, ensure_ascii=False))
+        if _yrs and int(_yrs[0]) < 1970:
+            self.reject_modern = True
+            print(f"  Modo histórico P&B (ano {_yrs[0]}) — rejeita fotos modernas coloridas")
+
         assignments = {}
         mix_counter = {"video": 0, "image": 0, "document": 0}
 
@@ -120,6 +132,7 @@ class UniversalVisualEngine:
                     "category":    chosen.category,
                     "source":      chosen.source,
                     "url":         chosen.url,
+                    "title":       chosen.title,          # título real (p/ Editorial Agent)
                     "local_path":  chosen.local_path,
                     "duration":    round(chosen.duration, 2),
                     "score":       chosen.score,
@@ -259,20 +272,37 @@ class UniversalVisualEngine:
         # Âncoras = termos que aparecem em ao menos 2 cenas (recorrentes = assunto)
         anchor = sorted([w for w, n in freq.items() if n >= 2], key=lambda w: -freq[w])
 
-        # Reforço pelo nome do personagem/assunto da história
+        # TERMO PRIMÁRIO: nome próprio do caso (ex: "hindenburg"). Material REAL
+        # do caso menciona o primário; genéricos mencionam só termos amplos
+        # ("airship"). A validação estrita exige o primário.
+        self.subject_primary = []
         nome = (story.get("personagem_principal", {}) or {}).get("nome", "")
         for w in re.findall(r"[A-Za-z]{4,}", nome):
             wl = w.lower()
-            if wl not in generic and wl not in anchor:
-                anchor.insert(0, wl)
+            if wl not in generic:
+                self.subject_primary.append(wl)
+                if wl not in anchor:
+                    anchor.insert(0, wl)
+        # Se não houver nome próprio, também tenta o título (primeira palavra forte)
+        if not self.subject_primary:
+            for w in re.findall(r"[A-Za-z]{4,}", story.get("titulo", "")):
+                wl = w.lower()
+                if wl not in generic:
+                    self.subject_primary.append(wl); break
 
-        return anchor[:4] if anchor else []
+        return anchor[:5] if anchor else []
 
-    def _matches_anchor(self, text: str) -> bool:
-        """True se o texto menciona ≥1 termo da âncora de assunto."""
+    def _matches_anchor(self, text: str, strict: bool = False) -> bool:
+        """
+        strict=False: menciona ≥1 termo da âncora (busca ampla).
+        strict=True : DEVE mencionar o termo PRIMÁRIO (nome próprio) — garante
+                      material REAL do caso, não genérico do mesmo tema.
+        """
         if not self.subject_anchor:
-            return True   # sem âncora definida, não filtra
+            return True
         t = text.lower()
+        if strict and getattr(self, "subject_primary", None):
+            return any(p in t for p in self.subject_primary)
         return any(a in t for a in self.subject_anchor)
 
     # Termos genéricos que não distinguem o MOMENTO da cena
@@ -350,9 +380,15 @@ class UniversalVisualEngine:
         self._score_all(candidates, ctx)
         candidates.sort(key=lambda a: a.score, reverse=True)
 
-        # FILTRO DE RELEVÂNCIA: só considera candidatos que mencionam o assunto
-        # (âncora). Sem isso, buscas genéricas trariam imagens erradas.
-        relevant = [c for c in candidates if self._matches_anchor(f"{c.title} {c.description}")]
+        # FILTRO DE RELEVÂNCIA ESTRITO (precisão máxima): exige o termo PRIMÁRIO
+        # (nome próprio do caso, ex "hindenburg") no título/descrição. Elimina
+        # genéricos do mesmo tema (qualquer "airship") e stock irrelevante.
+        relevant = [c for c in candidates
+                    if self._matches_anchor(f"{c.title} {c.description}", strict=True)]
+        # Se nada passar no estrito (caso sem nome próprio forte), cai p/ amplo
+        if not relevant and not self.subject_primary:
+            relevant = [c for c in candidates
+                        if self._matches_anchor(f"{c.title} {c.description}")]
 
         # PRECISÃO TEMPORAL/CONTEXTUAL (genérico p/ qualquer caso):
         # ordena preferindo candidatos que batem os TERMOS DISTINTIVOS da cena
@@ -367,7 +403,9 @@ class UniversalVisualEngine:
             person_penalty = 0
             if not scene_has_person and self._looks_like_person(text):
                 person_penalty = -1                              # foto de pessoa fora de hora
-            return (person_penalty, n_term, c.score)
+            # Preferência de vídeo quando a cena pede movimento (ritmo/ação)
+            video_bonus = 1 if (want_video_first and c.asset_type == "video") else 0
+            return (person_penalty, video_bonus, n_term, c.score)
 
         relevant.sort(key=rank, reverse=True)
         pool = relevant   # se vazio, vai p/ fill_gaps
@@ -502,9 +540,13 @@ class UniversalVisualEngine:
         if not want_video:
             time.sleep(self.REQ_DELAY)
             results.extend(prov.loc_search(self.session, query))
-        # Providers com chave (só rodam se key existir)
-        results.extend(prov.pexels_search(self.session, query, want_video))
-        results.extend(prov.pixabay_search(self.session, query, want_video))
+
+        # Pexels/Pixabay (stock) só para TEMAS GENÉRICOS (sem nome próprio).
+        # Em casos históricos específicos (Hindenburg, Titanic...) eles só têm
+        # material genérico do tema, não o caso real — então são desligados.
+        if not self.subject_primary:
+            results.extend(prov.pexels_search(self.session, query, want_video))
+            results.extend(prov.pixabay_search(self.session, query, want_video))
 
         self._save_cache(key, [asdict(r) for r in results])
         return results
@@ -594,6 +636,12 @@ class UniversalVisualEngine:
             dest.write_bytes(buf.getvalue())
         except Exception:
             dest.write_bytes(raw)
+
+        # v4.1 — caso histórico: rejeita foto MODERNA colorida (museu/marco/réplica)
+        # na hora, para o engine tentar a PRÓXIMA candidata (P&B de época).
+        if self.reject_modern and qf.is_modern_color(dest):
+            dest.unlink(missing_ok=True)
+            return False
 
         # v3.7 — Visual Quality Filter (pós-download)
         verdict = qf.evaluate_image_file(dest, relevance_score=asset.score)

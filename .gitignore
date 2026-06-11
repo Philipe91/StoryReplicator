@@ -55,3 +55,12 @@ render_hindenburg.py
 # Validação (relatórios versionados, assets de teste não)
 validation/run_battery.py
 validation/build_representative.py
+
+# Demo de validação
+validation/build_hindenburg_demo.py
+validation/quick_video_test.py
+
+# Chaves de API (NUNCA commitar)
+key.txt
+keys.txt
+*.secret

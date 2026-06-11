@@ -143,6 +143,23 @@ def evaluate_video_file(path: Path, ffmpeg_exe: str = "ffmpeg") -> dict:
 
 # ─── Upscale (Real-ESRGAN / Upscayl) ──────────────────────────────────────────
 
+def is_modern_color(path) -> bool:
+    """
+    True se a imagem é colorida vibrante (foto digital moderna) — indício de
+    museu/marco/réplica/foto atual, não do evento histórico (que é P&B/sépia).
+    Usado para casos antigos (< ~1970) garantirem material de época.
+    """
+    try:
+        from PIL import Image
+        import numpy as np
+        with Image.open(path) as im:
+            small = im.convert("HSV").resize((128, 128))
+            sat = np.asarray(small)[:, :, 1].astype(float) / 255.0
+        return float(sat.mean()) > 0.18 or float((sat > 0.35).mean()) > 0.25
+    except Exception:
+        return False
+
+
 def upscale_available() -> bool:
     return bool(REALESRGAN_PATH or UPSCAYL_PATH)
 

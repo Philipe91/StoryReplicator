@@ -53,7 +53,8 @@ def _anthropic_ask(prompt, max_tokens, system):
     return msg.content[0].text.strip()
 
 
-def _openai_compat_ask(base_url, api_key, model, prompt, max_tokens, system):
+def _openai_compat_ask(base_url, api_key, model, prompt, max_tokens, system,
+                       timeout=_TIMEOUT):
     """Groq, OpenRouter e Ollama falam o mesmo dialeto (OpenAI chat)."""
     messages = ([{"role": "system", "content": system}] if system else []) \
         + [{"role": "user", "content": prompt}]
@@ -63,7 +64,7 @@ def _openai_compat_ask(base_url, api_key, model, prompt, max_tokens, system):
                  "Content-Type": "application/json"},
         json={"model": model, "messages": messages,
               "max_tokens": max_tokens, "temperature": 0.7},
-        timeout=_TIMEOUT,
+        timeout=timeout,
     )
     if r.status_code in _RETRYABLE:
         raise _Retryable(f"HTTP {r.status_code}")
@@ -129,10 +130,13 @@ def _ollama_available() -> bool:
 
 
 def _ollama_ask(prompt, max_tokens, system):
+    # LLM local em CPU: carregar o modelo (9GB+) e gerar milhares de tokens
+    # leva vários minutos — timeout generoso, configurável por env var
+    timeout = int(os.getenv("OLLAMA_TIMEOUT", "1800"))
     return _openai_compat_ask(
         "http://localhost:11434/v1", "ollama",
         os.getenv("OLLAMA_MODEL", "qwen2.5:7b"),
-        prompt, max_tokens, system)
+        prompt, max_tokens, system, timeout=timeout)
 
 
 class _Retryable(RuntimeError):

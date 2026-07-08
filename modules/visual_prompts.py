@@ -1,8 +1,8 @@
 """ETAPA 7 — Geração de prompts visuais para geração de imagens."""
 
 import json
-import anthropic
-from config import ANTHROPIC_API_KEY, CLAUDE_MODEL, IMAGE_STYLE
+from config import IMAGE_STYLE
+from modules.claude_client import ask_json
 
 
 VISUAL_PROMPT_TEMPLATE = """Você é um diretor de arte especializado em documentários históricos cinematográficos.
@@ -47,30 +47,17 @@ Retorne APENAS o JSON, sem explicações."""
 
 def generate_visual_prompts(storyboard: dict) -> dict:
     """Gera prompts visuais detalhados para cada cena do storyboard."""
-    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
-
     prompt = VISUAL_PROMPT_TEMPLATE.format(
         storyboard=json.dumps(storyboard, ensure_ascii=False, indent=2),
         style=IMAGE_STYLE,
     )
 
-    message = client.messages.create(
-        model=CLAUDE_MODEL,
-        max_tokens=6000,
-        messages=[{"role": "user", "content": prompt}],
-    )
-
-    raw = message.content[0].text.strip()
-    raw = raw.replace("```json", "").replace("```", "").strip()
-
-    try:
-        data = json.loads(raw)
-        # Renumerar IDs de imagem sequencialmente
-        for i, p in enumerate(data.get("prompts", []), 1):
-            p["image_id"] = f"IMAGE_{i:02d}"
-        return data
-    except json.JSONDecodeError:
-        return {"prompts": [], "raw": raw}
+    data = ask_json(prompt, max_tokens=6000, fallback={"prompts": []})
+    data.setdefault("prompts", [])
+    # Renumerar IDs de imagem sequencialmente
+    for i, p in enumerate(data["prompts"], 1):
+        p["image_id"] = f"IMAGE_{i:02d}"
+    return data
 
 
 def export_prompts_txt(visual_prompts: dict, output_path: str) -> None:

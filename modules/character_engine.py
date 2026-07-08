@@ -117,9 +117,7 @@ def _enrich_via_claude(chars: list, story: dict) -> None:
     if not os.getenv("ANTHROPIC_API_KEY") or not chars:
         return
     try:
-        import anthropic
-        from config import CLAUDE_MODEL
-        client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+        from modules.claude_client import ask_json
         names = [c.name for c in chars]
         prompt = (
             f"Para cada personagem, descreva em inglês traços visuais para busca de "
@@ -127,10 +125,8 @@ def _enrich_via_claude(chars: list, story: dict) -> None:
             f"{json.dumps(story, ensure_ascii=False)[:1200]}\nPersonagens: {names}\n"
             'Retorne JSON: {"chars":[{"name":"...","description":"..."}]}'
         )
-        msg = client.messages.create(model=CLAUDE_MODEL, max_tokens=800,
-                                     messages=[{"role": "user", "content": prompt}])
-        raw = msg.content[0].text.strip().replace("```json", "").replace("```", "")
-        data = {d["name"]: d.get("description", "") for d in json.loads(raw).get("chars", [])}
+        result = ask_json(prompt, max_tokens=800, fallback={"chars": []})
+        data = {d["name"]: d.get("description", "") for d in result.get("chars", [])}
         for c in chars:
             if c.name in data and data[c.name]:
                 c.description = data[c.name]

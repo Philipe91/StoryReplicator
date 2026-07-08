@@ -189,9 +189,7 @@ def _generate_via_claude(story: dict, analysis: dict) -> list:
     if not os.getenv("ANTHROPIC_API_KEY"):
         return []
     try:
-        import anthropic
-        from config import CLAUDE_MODEL
-        client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+        from modules.claude_client import ask_json
         prompt = (
             "Gere 6 hooks (frases de abertura, máx 14 palavras) para um vídeo de "
             "história real, um por estratégia: curiosidade, choque, mistério, "
@@ -199,11 +197,9 @@ def _generate_via_claude(story: dict, analysis: dict) -> list:
             f"História: {json.dumps(story, ensure_ascii=False)[:1200]}\n"
             'Retorne JSON: {"hooks":[{"text":"...","strategy":"..."}]}'
         )
-        msg = client.messages.create(model=CLAUDE_MODEL, max_tokens=700,
-                                     messages=[{"role": "user", "content": prompt}])
-        raw = msg.content[0].text.strip().replace("```json", "").replace("```", "")
+        data = ask_json(prompt, max_tokens=700, fallback={"hooks": []})
         return [Hook(h["text"], h.get("strategy", "claude"))
-                for h in json.loads(raw).get("hooks", [])]
+                for h in data.get("hooks", [])]
     except Exception:
         return []
 

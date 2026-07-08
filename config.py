@@ -188,11 +188,6 @@ IMAGE_STYLE = (
     "dramatic shadows, muted color palette, aged texture"
 )
 
-# ─── TTS ───────────────────────────────────────────────────────────────────────
-KOKORO_VOICE   = "af_bella"
-KOKORO_SPEED   = 1.0
-KOKORO_LANG    = "pt"
-
 # ─── Multi-idioma (v3.8) ──────────────────────────────────────────────────────
 # Cada idioma usa uma voz NATIVA daquele idioma — evita o "escorregão" de
 # vozes multilíngues para outro idioma. pitch/rate ajustam tom e ritmo.

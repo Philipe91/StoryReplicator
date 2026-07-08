@@ -86,8 +86,25 @@ export const DocumentaryVideo: React.FC<CompositionProps> = ({
     <AbsoluteFill style={{ background: "#000" }}>
       {/* ── Cenas ────────────────────────────────────────────────────────── */}
       {scenes.map((scene) => {
-        const editDecision = editMap[scene.scene_id];
-        if (!editDecision) return null;
+        // Fallback seguro: sem decisão do Editor AI (arquivo ausente ou
+        // scene_id sem correspondência), a cena renderiza com uma decisão
+        // neutra em vez de sumir (antes: return null → vídeo preto).
+        const editDecision: EditDecision = editMap[scene.scene_id] ?? {
+          scene_id:         scene.scene_id,
+          segment:          scene.segment ?? "",
+          emotion:          scene.emotion ?? "mystery",
+          camera:           "slow_push_in" as EditDecision["camera"],
+          camera_intensity: 0.5,
+          camera_speed:     1.0,
+          transition_in:    "fade" as EditDecision["transition_in"],
+          transition_out:   "fade" as EditDecision["transition_out"],
+          subtitle_style:   "CINEMATIC" as EditDecision["subtitle_style"],
+          rhythm:           "medium",
+          broll_needed:     false,
+          broll_queries:    [],
+          duration:         scene.duration,
+          layers:           [],
+        };
 
         const startFrame     = Math.round(scene.start * resolvedFps);
         const durationFrames = Math.round(scene.duration * resolvedFps);

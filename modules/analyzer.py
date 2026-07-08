@@ -1,8 +1,6 @@
 """ETAPA 2 — Análise da estrutura narrativa."""
 
-import json
-import anthropic
-from config import ANTHROPIC_API_KEY, CLAUDE_MODEL
+from modules.claude_client import ask_json
 from modules.extractor import VideoData
 
 
@@ -65,8 +63,6 @@ Retorne APENAS o JSON, sem explicações."""
 
 def analyze(video: VideoData) -> dict:
     """Analisa estrutura narrativa e retorna relatório completo."""
-    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
-
     transcript_excerpt = (video.transcript or "")[:3000]
 
     prompt = ANALYSIS_PROMPT.format(
@@ -77,16 +73,5 @@ def analyze(video: VideoData) -> dict:
         views=video.view_count,
     )
 
-    message = client.messages.create(
-        model=CLAUDE_MODEL,
-        max_tokens=2000,
-        messages=[{"role": "user", "content": prompt}],
-    )
-
-    raw = message.content[0].text.strip()
-    raw = raw.replace("```json", "").replace("```", "").strip()
-
-    try:
-        return json.loads(raw)
-    except json.JSONDecodeError:
-        return {"raw_analysis": raw, "formula_replicavel": video.title}
+    return ask_json(prompt, max_tokens=2000,
+                    fallback={"formula_replicavel": video.title})

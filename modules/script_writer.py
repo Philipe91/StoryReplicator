@@ -1,8 +1,8 @@
 """ETAPA 4 — Roteiro profissional com timecodes dinâmicos por modo."""
 
 import json
-import anthropic
-from config import ANTHROPIC_API_KEY, CLAUDE_MODEL, NARRATION_TONE
+from config import NARRATION_TONE
+from modules.claude_client import ask_json, story_system
 
 
 def write_script(story: dict, mode_config: dict) -> dict:
@@ -10,8 +10,6 @@ def write_script(story: dict, mode_config: dict) -> dict:
     Gera roteiro profissional com timecodes.
     mode_config = get_mode("short" | "reel" | "documentary")
     """
-    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
-
     segments     = mode_config["segments"]
     duration     = mode_config["duration"]
     target_words = mode_config["target_words"]
@@ -41,10 +39,8 @@ def write_script(story: dict, mode_config: dict) -> dict:
 
     prompt = f"""Você é um roteirista profissional de documentários curtos para plataformas de vídeo curto.
 
-Escreva o roteiro completo para um vídeo de {duration} segundos ({mode_label}).
-
-HISTÓRIA:
-{json.dumps(story, ensure_ascii=False, indent=2)}
+Escreva o roteiro completo para um vídeo de {duration} segundos ({mode_label}),
+baseado na HISTÓRIA fornecida no contexto do sistema.
 
 ESTRUTURA DE TEMPO OBRIGATÓRIA:
 {seg_lines}
@@ -67,16 +63,8 @@ Retorne APENAS este JSON (sem explicações):
   "segmentos": {seg_schema}
 }}"""
 
-    message = client.messages.create(
-        model=CLAUDE_MODEL,
-        max_tokens=3000,
-        messages=[{"role": "user", "content": prompt}],
-    )
-
-    raw = message.content[0].text.strip().replace("```json","").replace("```","").strip()
-    try:
-        data = json.loads(raw)
-        data["_mode"] = mode_config
-        return data
-    except json.JSONDecodeError:
-        return {"titulo_roteiro": "Roteiro", "segmentos": [], "_mode": mode_config, "raw": raw}
+    data = ask_json(prompt, max_tokens=3000, system=story_system(story),
+                    fallback={"titulo_roteiro": "Roteiro", "segmentos": []})
+    data.setdefault("segmentos", [])
+    data["_mode"] = mode_config
+    return data

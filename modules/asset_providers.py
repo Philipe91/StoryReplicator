@@ -94,6 +94,110 @@ def wikimedia_search(session, query: str, want_video: bool = False) -> list:
     return results
 
 
+# ─── Openverse (WordPress) — sem chave, agrega 800M+ mídias CC ─────────────────
+
+def openverse_search(session, query: str, want_video: bool = False) -> list:
+    """
+    Busca no Openverse (api.openverse.org). Sem chave: uso moderado.
+    Só imagens (o endpoint de vídeo não existe; áudio é usado pelo music engine).
+    """
+    if want_video:
+        return []
+    results = []
+    try:
+        r = session.get(
+            "https://api.openverse.org/v1/images/",
+            params={"q": query, "page_size": "8", "license_type": "all",
+                    "filter_dead": "true"},
+            timeout=15,
+        )
+        if r.status_code != 200:
+            return results
+        for item in r.json().get("results", []):
+            url = item.get("url", "")
+            if not url or url.lower().endswith(".svg"):
+                continue
+            results.append(VisualAsset(
+                url=url,
+                title=item.get("title", "") or "",
+                description=(item.get("tags") and
+                             " ".join(t.get("name", "") for t in item["tags"][:8])) or "",
+                asset_type="image",
+                width=item.get("width") or 0,
+                height=item.get("height") or 0,
+                source="openverse",
+                license=item.get("license", "unknown"),
+                extra={"page_url": item.get("foreign_landing_url", ""),
+                       "author": item.get("creator", "")},
+            ))
+    except Exception:
+        pass
+    return results
+
+
+# ─── NASA Images — sem chave, domínio público ──────────────────────────────────
+
+def nasa_search(session, query: str, want_video: bool = False) -> list:
+    """Busca na NASA Images API (aberta, sem chave). Ótima p/ espaço/ciência."""
+    results = []
+    try:
+        r = session.get(
+            "https://images-api.nasa.gov/search",
+            params={"q": query, "media_type": "video" if want_video else "image",
+                    "page_size": "8"},
+            timeout=15,
+        )
+        if r.status_code != 200:
+            return results
+        for item in r.json().get("collection", {}).get("items", [])[:8]:
+            data  = (item.get("data") or [{}])[0]
+            links = item.get("links") or []
+            href  = next((l.get("href", "") for l in links
+                          if l.get("rel") == "preview" or l.get("href")), "")
+            if not href:
+                continue
+            results.append(VisualAsset(
+                url=href.replace("~thumb", "~orig") if not want_video else href,
+                title=data.get("title", ""),
+                description=(data.get("description") or "")[:200],
+                asset_type="video" if want_video else "image",
+                source="nasa",
+                license="public domain",
+                extra={"page_url": f"https://images.nasa.gov/details/{data.get('nasa_id','')}",
+                       "author": data.get("center", "NASA")},
+            ))
+    except Exception:
+        pass
+    return results
+
+
+# ─── Pollinations.ai — GERAÇÃO de imagem gratuita (último recurso) ─────────────
+
+def pollinations_generate(session, prompt: str, width: int = 1080,
+                          height: int = 1920) -> "VisualAsset | None":
+    """
+    Gera uma imagem via Pollinations.ai (grátis, sem chave, rate-limit por IP).
+    Usado SOMENTE quando a busca em todas as fontes reais falhou.
+    """
+    import urllib.parse
+    try:
+        url = ("https://image.pollinations.ai/prompt/"
+               + urllib.parse.quote(prompt[:300])
+               + f"?width={width}&height={height}&nologo=true")
+        return VisualAsset(
+            url=url,
+            title=f"AI generated: {prompt[:80]}",
+            description=prompt[:200],
+            asset_type="image",
+            category="image_complement",
+            width=width, height=height,
+            source="pollinations-ai",
+            license="AI generated (Pollinations)",
+        )
+    except Exception:
+        return None
+
+
 # ─── Internet Archive ──────────────────────────────────────────────────────────
 
 def archive_search(session, query: str, want_video: bool = False) -> list:

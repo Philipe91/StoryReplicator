@@ -24,12 +24,6 @@ import os
 import time
 from pathlib import Path
 
-if not os.getenv("ANTHROPIC_API_KEY"):
-    print("[AVISO] ANTHROPIC_API_KEY não definida.")
-    print("  Etapas de IA (análise, roteiro, narração) serão ignoradas.")
-    print("  Para uso completo: set ANTHROPIC_API_KEY=sk-ant-...")
-    print()
-
 from config import OUTPUT_DIR, get_mode
 from modules.extractor              import extract
 from modules.analyzer               import analyze
@@ -50,7 +44,7 @@ from modules.visual_asset_engine    import UniversalVisualEngine, save_reports, 
 from modules.music_engine            import MusicEngine, mix_audio                                    # v3.7
 from modules.visual_prompts         import generate_visual_prompts, export_prompts_txt
 from modules.timeline_builder       import build_timeline
-from modules.subtitle_engine        import synthesize_with_subtitles, save_subtitles_json         # v3.5
+from modules.subtitle_engine        import synthesize_narration_directed, save_subtitles_json     # v3.5/v5
 from modules.render_auditor         import audit_and_fix
 from modules.video_assembler        import assemble as ffmpeg_assemble
 from modules.publisher_metadata     import generate_metadata
@@ -114,6 +108,16 @@ def run(
     langs: list = None,
     mode_override: dict = None,
 ) -> Path:
+
+    from modules.llm_client import any_available, available_providers
+    if not any_available():
+        raise RuntimeError(
+            "Nenhum provider de IA configurado. Configure UMA opção GRATUITA: "
+            "GROQ_API_KEY (console.groq.com, sem cartão), GEMINI_API_KEY "
+            "(aistudio.google.com, sem cartão), OPENROUTER_API_KEY (openrouter.ai) "
+            "ou instale o Ollama (ollama.com) para rodar 100% local."
+        )
+    print(f"  IA: {', '.join(available_providers())}")
 
     langs   = langs or ["pt"]
     # mode_override (Format Manager via API) tem prioridade sobre mode_name
@@ -233,6 +237,10 @@ def run(
     editor_ai_save(edit_decisions, out)
     broll_needed = sum(1 for d in edit_decisions if d.broll_needed)
     styles_used  = sorted({d.subtitle_style for d in edit_decisions})
+    # Estilo dominante = o mais FREQUENTE entre as cenas (não o 1º alfabético)
+    from collections import Counter
+    _style_counts  = Counter(d.subtitle_style for d in edit_decisions)
+    dominant_style = _style_counts.most_common(1)[0][0] if _style_counts else "CINEMATIC"
     print(f"  Decisões:      {len(edit_decisions)} cenas")
     print(f"  B-roll marcado:{broll_needed} cenas")
     print(f"  Estilos legenda:{', '.join(styles_used)}")
@@ -259,6 +267,16 @@ def run(
                      "video_count": 0, "image_count": 0, "historical_assets_count": 0,
                      "document_count": 0, "sources_used": [], "assignments": {}}
 
+    # ── ETAPA 08b: B-roll documental (v5.0) ───────────────────────────────────
+    if not skip_images:
+        _step(8, "B-roll documental para overlays (v5.0)")
+        try:
+            from modules.broll_engine import acquire_broll
+            n_broll = acquire_broll(edit_decisions, out)
+            print(f"  B-roll adquirido: {n_broll} cena(s) com document_overlay")
+        except Exception as e:
+            print(f"  [broll] erro: {e} — seguindo sem overlays")
+
     # ── ETAPA 10: Visual Prompts (fallback manual) ────────────────────────────
     _step(10, "Prompts visuais para imagens faltantes")
     visual_prompts = generate_visual_prompts(storyboard)
@@ -276,20 +294,21 @@ def run(
           f"Duração: {timeline['total_duration']}s")
     _save(timeline, out / "timeline.json")
 
-    # ── ETAPA 12: TTS com word boundaries — P5 ────────────────────────────────
-    _step(12, "Síntese de voz + legendas profissionais (P5)")
+    # ── ETAPA 12: TTS por segmento com prosódia + word boundaries reais ───────
+    _step(12, "Síntese de voz dirigida (prosódia por segmento) + legendas")
     narration_text = narration.get("narration_full", "")
     word_boundaries = []
     if narration_text:
         try:
-            wav_path, srt_path, ass_path, word_boundaries = synthesize_with_subtitles(
-                narration_text, out, ffmpeg_exe=ffmpeg
+            wav_path, srt_path, ass_path, word_boundaries = synthesize_narration_directed(
+                narration, out, ffmpeg_exe=ffmpeg
             )
+            n_segs = len([s for s in narration.get("segments", []) if s.get("text")])
             print(f"  Audio:     {wav_path.name}  ({wav_path.stat().st_size // 1024}KB)")
+            print(f"  Prosódia:  {n_segs} segmentos com rate/pitch próprios")
             print(f"  Legendas:  {srt_path.name} + {ass_path.name}  "
-                  f"({len(word_boundaries)} word boundaries)")
+                  f"({len(word_boundaries)} word boundaries reais)")
             # subtitles.json para Remotion (word-level timing)
-            dominant_style = styles_used[0] if styles_used else "CINEMATIC"
             sub_json_path  = save_subtitles_json(word_boundaries, out, dominant_style)
             print(f"  subtitles.json: {Path(sub_json_path).name}")
         except Exception as e:
@@ -378,6 +397,13 @@ def run(
     print(f"  YouTube: {yt}")
     print(f"  Tags:    {' '.join(tags[:5])}")
     _export_metadata_txt(metadata, out / "14_metadata.txt")
+
+    # ── ETAPA 14b: Thumbnail automática — v5.0 ────────────────────────────────
+    _step(14, "Thumbnail automática (v5.0)")
+    from modules.thumbnail_engine import generate_thumbnails
+    thumbs = generate_thumbnails(timeline, metadata, out)
+    for t in thumbs:
+        print(f"  Thumbnail: {Path(t).name}")
 
     # ── ETAPA 15: Montagem ────────────────────────────────────────────────────
     final_path = out / "final_video.mp4"
@@ -519,6 +545,13 @@ if __name__ == "__main__":
         ),
     )
     parser.add_argument("url")
+    parser.add_argument("--style", default="story",
+                        choices=["story", "explainer"],
+                        help="story=história viral (padrão) | "
+                             "explainer=slides narrados estilo NotebookLM")
+    parser.add_argument("--theme", default="deep",
+                        choices=["deep", "paper", "ocean"],
+                        help="Tema visual dos slides (só --style explainer)")
     parser.add_argument("--format", default=None,
                         choices=["micro_story","short_documentary","documentary",
                                  "long_documentary","custom"],
@@ -539,6 +572,17 @@ if __name__ == "__main__":
     parser.add_argument("--langs", default="pt",
                         help="Idiomas separados por vírgula (ex: pt,en,es). Padrão: pt")
     args = parser.parse_args()
+
+    # Modo Explainer (NotebookLM): pipeline próprio de slides narrados
+    if args.style == "explainer":
+        from modules.explainer_pipeline import run_explainer
+        run_explainer(
+            url=args.url,
+            output_dir=args.output_dir,
+            theme=args.theme,
+            skip_video=args.skip_video,
+        )
+        raise SystemExit(0)
 
     # Format Manager: se --format ou --duration, resolve um mode dinâmico
     mode_override = None

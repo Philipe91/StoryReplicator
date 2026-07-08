@@ -1,16 +1,12 @@
 """ETAPA 10 — Geração de metadados de publicação."""
 
-import json
-import anthropic
-from config import ANTHROPIC_API_KEY, CLAUDE_MODEL, IMAGE_STYLE
+from modules.claude_client import ask_json, story_system
 
 
 METADATA_PROMPT = """Você é um especialista em SEO e growth hacking para YouTube Shorts, TikTok e Instagram Reels.
 
-HISTÓRIA:
-{story}
-
-Crie metadados completos de publicação para maximizar o alcance viral.
+Baseado na HISTÓRIA fornecida no contexto do sistema,
+crie metadados completos de publicação para maximizar o alcance viral.
 
 Retorne um JSON com esta estrutura exata:
 {{
@@ -58,22 +54,6 @@ Retorne APENAS o JSON, sem explicações."""
 
 def generate_metadata(story: dict) -> dict:
     """Gera todos os metadados de publicação."""
-    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
-
-    prompt = METADATA_PROMPT.format(
-        story=json.dumps(story, ensure_ascii=False, indent=2)
-    )
-
-    message = client.messages.create(
-        model=CLAUDE_MODEL,
-        max_tokens=3000,
-        messages=[{"role": "user", "content": prompt}],
-    )
-
-    raw = message.content[0].text.strip()
-    raw = raw.replace("```json", "").replace("```", "").strip()
-
-    try:
-        return json.loads(raw)
-    except json.JSONDecodeError:
-        return {"raw": raw}
+    # .format() sem args converte as chaves escapadas {{ }} do template em { }
+    return ask_json(METADATA_PROMPT.format(), max_tokens=3000,
+                    system=story_system(story))

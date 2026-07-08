@@ -1,8 +1,8 @@
-"""ETAPA 5 — Narração completa pronta para Kokoro TTS, com modos dinâmicos."""
+"""ETAPA 5 — Narração completa pronta para TTS, com modos dinâmicos."""
 
 import json
-import anthropic
-from config import ANTHROPIC_API_KEY, CLAUDE_MODEL, NARRATION_TONE
+from config import NARRATION_TONE
+from modules.claude_client import ask_json
 
 
 def write_narration(script: dict, mode_config: dict) -> dict:
@@ -10,8 +10,6 @@ def write_narration(script: dict, mode_config: dict) -> dict:
     Gera narração otimizada para TTS a partir do roteiro.
     mode_config = get_mode("short" | "reel" | "documentary")
     """
-    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
-
     segments     = mode_config["segments"]
     duration     = mode_config["duration"]
     target_words = mode_config["target_words"]
@@ -54,21 +52,15 @@ Retorne APENAS este JSON (sem explicações):
   "segments": {seg_schema}
 }}"""
 
-    message = client.messages.create(
-        model=CLAUDE_MODEL,
-        max_tokens=3000,
-        messages=[{"role": "user", "content": prompt}],
-    )
-
-    raw = message.content[0].text.strip().replace("```json","").replace("```","").strip()
-    try:
-        data = json.loads(raw)
-        # Calcula word_count e estimated_duration se não preenchidos
-        for seg in data.get("segments", []):
-            if not seg.get("word_count"):
-                seg["word_count"] = len(seg.get("text","").split())
-            if not seg.get("estimated_duration"):
-                seg["estimated_duration"] = round(seg["word_count"] / 2.5, 1)
-        return data
-    except json.JSONDecodeError:
-        return {"narration_full": raw, "segments": []}
+    data = ask_json(prompt, max_tokens=3000,
+                    fallback={"narration_full": "", "segments": []})
+    if not data.get("narration_full") and data.get("raw"):
+        data["narration_full"] = data["raw"]
+    data.setdefault("segments", [])
+    # Calcula word_count e estimated_duration se não preenchidos
+    for seg in data["segments"]:
+        if not seg.get("word_count"):
+            seg["word_count"] = len(seg.get("text", "").split())
+        if not seg.get("estimated_duration"):
+            seg["estimated_duration"] = round(seg["word_count"] / 2.5, 1)
+    return data

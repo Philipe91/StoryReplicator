@@ -70,9 +70,12 @@ def audit_and_fix(timeline: dict, audio_path: str, ffmpeg_exe: str = "ffmpeg") -
             report["status"] = "fixed"
 
     # ── 6. Verifica cobertura visual total ────────────────────────────────────
+    # image_file é relativo ao diretório de saída (ex: "assets/image_01.jpg");
+    # resolve contra a pasta do áudio, não contra o CWD.
+    base_dir = Path(audio_path).parent
     missing_images = [
         s["scene_id"] for s in scenes
-        if not Path(str(s.get("image_file", ""))).exists()
+        if not (base_dir / str(s.get("image_file", ""))).exists()
         and not s.get("video_file")
     ]
     report["missing_visual_assets"] = missing_images

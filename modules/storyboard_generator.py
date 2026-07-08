@@ -8,8 +8,8 @@ Mudanças vs v1:
 """
 
 import json
-import anthropic
-from config import ANTHROPIC_API_KEY, CLAUDE_MODEL, IMAGE_STYLE, SEGMENT_EMOTIONS
+from config import IMAGE_STYLE, SEGMENT_EMOTIONS
+from modules.claude_client import ask_json, story_system
 
 
 def generate_storyboard(narration: dict, story: dict, mode_config: dict) -> dict:
@@ -17,7 +17,6 @@ def generate_storyboard(narration: dict, story: dict, mode_config: dict) -> dict
     Gera storyboard completo com cenas curtas (4s média) e emoção por cena.
     mode_config = get_mode(...)
     """
-    client   = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
     duration = mode_config["duration"]
     segments = mode_config["segments"]
 
@@ -31,13 +30,11 @@ def generate_storyboard(narration: dict, story: dict, mode_config: dict) -> dict
 
     prompt = f"""Você é um diretor de arte de documentários cinematográficos profissionais.
 
-Crie o storyboard completo para um vídeo de {duration} segundos.
+Crie o storyboard completo para um vídeo de {duration} segundos,
+baseado na HISTÓRIA fornecida no contexto do sistema e na NARRAÇÃO abaixo.
 
 NARRAÇÃO:
 {json.dumps(narration, ensure_ascii=False, indent=2)}
-
-HISTÓRIA:
-{json.dumps(story, ensure_ascii=False, indent=2)}
 
 REGRAS OBRIGATÓRIAS:
 1. Total de cenas: {ideal_scenes} a {ideal_scenes + 6} (1 cena a cada ~{interval}s)
@@ -80,23 +77,14 @@ Retorne APENAS este JSON (sem explicações):
   ]
 }}"""
 
-    message = client.messages.create(
-        model=CLAUDE_MODEL,
-        max_tokens=8000,
-        messages=[{"role": "user", "content": prompt}],
-    )
-
-    raw = message.content[0].text.strip().replace("```json", "").replace("```", "").strip()
-    try:
-        data = json.loads(raw)
-        if "cenas" not in data:
-            data = {"total_cenas": 0, "cenas": []}
-        data["total_cenas"]   = len(data["cenas"])
-        data["duracao_total"] = duration
-        # Garante campo emotion em todas as cenas
-        for cena in data["cenas"]:
-            if "emotion" not in cena:
-                cena["emotion"] = SEGMENT_EMOTIONS.get(cena.get("segmento", ""), "mystery")
-        return data
-    except json.JSONDecodeError:
-        return {"total_cenas": 0, "cenas": [], "raw": raw}
+    data = ask_json(prompt, max_tokens=8000, system=story_system(story),
+                    fallback={"total_cenas": 0, "cenas": []})
+    if "cenas" not in data:
+        data["cenas"] = []
+    data["total_cenas"]   = len(data["cenas"])
+    data["duracao_total"] = duration
+    # Garante campo emotion em todas as cenas
+    for cena in data["cenas"]:
+        if "emotion" not in cena:
+            cena["emotion"] = SEGMENT_EMOTIONS.get(cena.get("segmento", ""), "mystery")
+    return data

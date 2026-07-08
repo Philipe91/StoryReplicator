@@ -64,3 +64,14 @@ validation/quick_video_test.py
 key.txt
 keys.txt
 *.secret
+
+# Modelos de TTS locais (grandes demais p/ GitHub — baixados na instalação)
+*.onnx
+voices-*.bin
+tts_benchmark.json
+
+# Config local do Claude Code
+.claude/
+
+# Biblioteca de música local (baixada pelo usuário)
+music_library/

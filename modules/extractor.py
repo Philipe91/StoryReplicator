@@ -58,23 +58,7 @@ def _fetch_metadata(url: str) -> Optional[dict]:
 
 
 def _fetch_transcript(url: str) -> str:
-    """Tenta extrair legenda/transcrição via yt-dlp."""
-    try:
-        result = subprocess.run(
-            [
-                "yt-dlp", "--skip-download",
-                "--write-auto-subs", "--sub-langs", "pt,en",
-                "--sub-format", "vtt",
-                "--output", "/tmp/yt_sub_%(id)s",
-                url
-            ],
-            capture_output=True, text=True, timeout=90
-        )
-        # fallback: tentar extrair do stdout do dump-json
-        if result.returncode != 0:
-            return _transcript_from_api(url)
-    except Exception:
-        pass
+    """Extrai legenda/transcrição via youtube-transcript-api."""
     return _transcript_from_api(url)
 
 

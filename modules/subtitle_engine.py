@@ -45,15 +45,20 @@ async def _stream_tts(text: str, voice: str, mp3_path: str,
     """
     Gera áudio via edge-tts capturando eventos WordBoundary.
     pitch/rate ajustam tom e velocidade da voz.
+
+    IMPORTANTE: desde o edge-tts 7.x o padrão é SentenceBoundary — sem
+    boundary="WordBoundary" NENHUM timestamp por palavra é emitido (e as
+    legendas viravam estimativa). Com o parâmetro, os timestamps reais
+    chegam inclusive com pitch/rate customizados (verificado na prática).
+
     Retorna lista de {word, start, end} em segundos.
     """
     import edge_tts
-    kwargs = {"voice": voice}
-    if pitch and pitch != "+0Hz":
-        kwargs["pitch"] = pitch
-    if rate and rate != "+0%":
-        kwargs["rate"] = rate
-    comm = edge_tts.Communicate(text, **kwargs)
+    comm = edge_tts.Communicate(
+        text, voice=voice,
+        pitch=pitch or "+0Hz", rate=rate or "+0%",
+        boundary="WordBoundary",
+    )
     boundaries = []
 
     with open(mp3_path, "wb") as f:
@@ -111,6 +116,7 @@ def synthesize_with_subtitles(
         # Escala linearmente os timings para casar com a duração real do áudio,
         # eliminando o "adiantamento" progressivo das legendas.
         boundaries = _rescale_boundaries(boundaries, real_dur)
+        boundaries = _reattach_punctuation(boundaries, text)
 
     # Gera legendas
     blocks = _group_into_blocks(boundaries)
@@ -119,6 +125,143 @@ def synthesize_with_subtitles(
 
     srt_path.write_text(srt_content, encoding="utf-8")
     ass_path.write_text(ass_content, encoding="utf-8")
+
+    return wav_path, srt_path, ass_path, boundaries
+
+
+# ─── Reanexar pontuação ───────────────────────────────────────────────────────
+
+def _strip_punct(w: str) -> str:
+    return re.sub(r"[^\wÀ-ÿ]", "", w).lower()
+
+
+def _reattach_punctuation(boundaries: list, text: str) -> list:
+    """
+    O edge-tts emite WordBoundary SEM a pontuação ("afundar" em vez de
+    "afundar."). Realinha os boundaries com os tokens do texto original para
+    restaurar pontuação — essencial para o agrupamento de blocos de legenda
+    (quebra em fim de frase) e para as pausas dramáticas ("...").
+    """
+    tokens = text.split()
+    out    = []
+    ti     = 0
+    for b in boundaries:
+        word  = b["word"]
+        clean = _strip_punct(word)
+        replacement = word
+        # procura o token correspondente numa janela pequena à frente
+        for look in range(ti, min(ti + 3, len(tokens))):
+            if _strip_punct(tokens[look]) == clean:
+                replacement = tokens[look]
+                ti = look + 1
+                break
+        out.append({**b, "word": replacement})
+    return out
+
+
+# ─── Síntese dirigida por segmento (prosódia aplicada) ────────────────────────
+
+def synthesize_narration_directed(
+    narration: dict,
+    output_dir: Path,
+    voice: str = None,
+    ffmpeg_exe: str = "ffmpeg",
+    gap_seconds: float = 0.35,
+) -> tuple:
+    """
+    Sintetiza a narração SEGMENTO A SEGMENTO aplicando o prosody_plan do
+    Narration Director (rate/pitch por emoção do segmento) — em vez de uma
+    voz monótona global. Concatena os áudios com micro-pausa entre segmentos
+    e desloca os word boundaries pelo offset real de cada segmento.
+
+    Fallback: sem segments/prosody_plan, usa a síntese de texto corrido.
+
+    Retorna: (audio_wav_path, srt_path, ass_path, word_boundaries)
+    """
+    from config import EDGE_TTS_PITCH, EDGE_TTS_RATE, EDGE_TTS_VOICE as _DEF_VOICE
+    voice    = voice or _DEF_VOICE
+    segments = [s for s in (narration.get("segments") or []) if s.get("text", "").strip()]
+    prosody  = {p.get("id"): p for p in narration.get("prosody_plan", [])}
+
+    if not segments:
+        return synthesize_with_subtitles(
+            narration.get("narration_full", ""), output_dir,
+            voice=voice, ffmpeg_exe=ffmpeg_exe,
+        )
+
+    output_dir = Path(output_dir)
+    seg_dir    = output_dir / "tts_segments"
+    seg_dir.mkdir(parents=True, exist_ok=True)
+
+    async def _synth_all():
+        results = []
+        for i, seg in enumerate(segments):
+            plan  = prosody.get(seg.get("id"), {})
+            pitch = plan.get("pitch", EDGE_TTS_PITCH)
+            rate  = plan.get("rate",  EDGE_TTS_RATE)
+            mp3   = seg_dir / f"seg_{i:02d}.mp3"
+            b     = await _stream_tts(seg["text"], voice, str(mp3), pitch, rate)
+            results.append((seg, mp3, b, pitch, rate))
+        return results
+
+    results = asyncio.run(_synth_all())
+
+    # Converte cada segmento para WAV padronizado e concatena com pausa
+    import wave
+    all_frames  = []
+    boundaries  = []
+    offset      = 0.0
+    sr, sw, ch  = 24000, 2, 1
+    gap_frames  = b"\x00" * int(sr * gap_seconds) * sw
+
+    for i, (seg, mp3, seg_bounds, pitch, rate) in enumerate(results):
+        wav_seg = seg_dir / f"seg_{i:02d}.wav"
+        _mp3_to_wav(str(mp3), str(wav_seg), ffmpeg_exe)
+        if not wav_seg.exists():
+            continue
+        with wave.open(str(wav_seg), "rb") as wf:
+            sr = wf.getframerate()
+            sw = wf.getsampwidth()
+            ch = wf.getnchannels()
+            frames  = wf.readframes(wf.getnframes())
+            seg_dur = wf.getnframes() / float(sr)
+        gap_frames = b"\x00" * int(sr * gap_seconds) * sw * ch
+
+        if not seg_bounds:
+            seg_bounds = _estimate_boundaries(seg["text"], seg_dur)
+        else:
+            seg_bounds = _rescale_boundaries(seg_bounds, seg_dur)
+            seg_bounds = _reattach_punctuation(seg_bounds, seg["text"])
+
+        for b in seg_bounds:
+            boundaries.append({
+                "word":    b["word"],
+                "start":   round(b["start"] + offset, 3),
+                "end":     round(b["end"]   + offset, 3),
+                "segment": seg.get("id", ""),
+            })
+
+        all_frames.append(frames)
+        offset += seg_dur
+        if i < len(results) - 1:
+            all_frames.append(gap_frames)
+            offset += gap_seconds
+
+    if not all_frames:
+        raise RuntimeError("Nenhum segmento de áudio foi sintetizado (edge-tts indisponível?)")
+
+    wav_path = output_dir / "audio.wav"
+    with wave.open(str(wav_path), "wb") as wf:
+        wf.setnchannels(ch)
+        wf.setsampwidth(sw)
+        wf.setframerate(sr)
+        wf.writeframes(b"".join(all_frames))
+
+    srt_path = output_dir / "subtitles.srt"
+    ass_path = output_dir / "subtitles.ass"
+    blocks   = _group_into_blocks(boundaries)
+    srt_path.write_text(_build_srt(blocks), encoding="utf-8")
+    ass_path.write_text(_build_ass(blocks), encoding="utf-8")
 
     return wav_path, srt_path, ass_path, boundaries
 
@@ -144,9 +287,16 @@ def _group_into_blocks(boundaries: list, max_chars: int = None, max_words: int =
         line2_len = 0
         on_line2  = False
 
+    prev_segment = None
     for wb in boundaries:
         word     = wb["word"]
         wlen     = len(word) + 1   # +1 espaço
+
+        # Nunca deixa um bloco de legenda atravessar segmentos narrativos
+        seg = wb.get("segment")
+        if seg is not None and prev_segment is not None and seg != prev_segment:
+            _flush()
+        prev_segment = seg
 
         if not on_line2:
             if line1_len + wlen > max_chars:

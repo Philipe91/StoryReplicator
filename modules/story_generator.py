@@ -1,8 +1,7 @@
 """ETAPA 3 — Geração de nova história original com mesma estrutura."""
 
 import json
-import anthropic
-from config import ANTHROPIC_API_KEY, CLAUDE_MODEL
+from modules.claude_client import ask_json
 
 
 STORY_PROMPT = """Você é um roteirista especializado em histórias reais inacreditáveis para vídeos virais.
@@ -51,20 +50,5 @@ Retorne APENAS o JSON, sem explicações."""
 
 def generate_story(analysis: dict) -> dict:
     """Gera nova história original baseada na análise do vídeo original."""
-    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
-
     prompt = STORY_PROMPT.format(analysis=json.dumps(analysis, ensure_ascii=False, indent=2))
-
-    message = client.messages.create(
-        model=CLAUDE_MODEL,
-        max_tokens=3000,
-        messages=[{"role": "user", "content": prompt}],
-    )
-
-    raw = message.content[0].text.strip()
-    raw = raw.replace("```json", "").replace("```", "").strip()
-
-    try:
-        return json.loads(raw)
-    except json.JSONDecodeError:
-        return {"titulo": "Nova História", "raw": raw}
+    return ask_json(prompt, max_tokens=3000, fallback={"titulo": "Nova História"})

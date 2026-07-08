@@ -60,6 +60,10 @@ class UniversalVisualEngine:
 
         # v4.0 — deduplicação de assets entre cenas (variedade visual)
         self._used_keys = set()
+
+        # v5.1 — proveniência: por cena, queries usadas + candidatos ranqueados
+        # (URL, fonte, licença, score) + justificativa da escolha
+        self.provenance = {}
         self.subject_anchor = []    # termos-chave do assunto (precisão visual)
         self.subject_primary = []   # nome próprio do caso (validação estrita)
         self.reject_modern = False  # caso antigo: rejeita foto moderna colorida
@@ -410,6 +414,27 @@ class UniversalVisualEngine:
         relevant.sort(key=rank, reverse=True)
         pool = relevant   # se vazio, vai p/ fill_gaps
 
+        # v5.1 — Ledger de proveniência: registra o ranking ANTES da escolha
+        import datetime as _dt
+        self.provenance[cid] = {
+            "scene_id":     cid,
+            "queries":      list(getattr(ctx, "search_queries", []))[:10],
+            "accessed_at":  _dt.datetime.now().isoformat(timespec="seconds"),
+            "candidates_considered": len(candidates),
+            "ranked": [{
+                "title":      c.title[:120],
+                "url":        c.url,
+                "page_url":   (c.extra or {}).get("page_url", ""),
+                "author":     (c.extra or {}).get("author", ""),
+                "source":     c.source,
+                "license":    c.license,
+                "asset_type": c.asset_type,
+                "category":   c.category,
+                "score_100":  round(min(c.score, 1.0) * 100),
+            } for c in pool[:8]],
+            "chosen": None,
+        }
+
         # DEDUP: pula candidatos já usados em outra cena (variedade + mescla).
         for cand in pool[:18]:
             akey = self._asset_key(cand)
@@ -417,6 +442,20 @@ class UniversalVisualEngine:
                 continue
             if self._download(cand, cid):
                 self._used_keys.add(akey)
+                n_terms = sum(1 for t in scene_terms
+                              if t in f"{cand.title} {cand.description}".lower())
+                self.provenance[cid]["chosen"] = {
+                    "url":        cand.url,
+                    "source":     cand.source,
+                    "license":    cand.license,
+                    "score_100":  round(min(cand.score, 1.0) * 100),
+                    "justificativa": (
+                        f"Maior score entre {len(pool)} candidatos relevantes; "
+                        f"casa {n_terms} termo(s) do momento da cena; "
+                        f"tipo {cand.asset_type}/{cand.category}; "
+                        f"licença {cand.license or 'pública'}; inédito no vídeo (dedup)."
+                    ),
+                }
                 return cand
         return None
 
@@ -540,6 +579,8 @@ class UniversalVisualEngine:
         if not want_video:
             time.sleep(self.REQ_DELAY)
             results.extend(prov.loc_search(self.session, query))
+            time.sleep(self.REQ_DELAY)
+            results.extend(prov.openverse_search(self.session, query))
 
         # Pexels/Pixabay (stock) só para TEMAS GENÉRICOS (sem nome próprio).
         # Em casos históricos específicos (Hindenburg, Titanic...) eles só têm
@@ -778,6 +819,7 @@ class UniversalVisualEngine:
             "average_resolution":      f"{avg_w}x{avg_h}",
             "visual_quality_score":    avg_q,
             "assignments":    assignments,
+            "provenance":     self.provenance,   # v5.1 — ledger por cena
         }
 
     def _missing(self, cid: int, queries: list) -> dict:
@@ -808,6 +850,15 @@ def save_reports(result: dict, output_dir: Path) -> None:
     (out / "08_visual_assets_report.json").write_text(
         json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"  Relatório: 08_visual_assets_report.json")
+
+    # v5.1 — relatório de proveniência exigido: URL/autor/licença/fonte/data/
+    # keywords/justificativa/score por cena, com candidatos ranqueados
+    prov = result.get("provenance", {})
+    if prov:
+        (out / "media_report.json").write_text(
+            json.dumps({"scenes": prov}, ensure_ascii=False, indent=2),
+            encoding="utf-8")
+        print(f"  Proveniência: media_report.json ({len(prov)} cenas)")
 
     missing = [
         {"cena_id": a["cena_id"], "keywords_tried": a.get("keywords_tried", [])}

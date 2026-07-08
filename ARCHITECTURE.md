@@ -1,4 +1,64 @@
-# StoryReplicator v2.0 — Arquitetura Completa
+# StoryReplicator — Arquitetura Completa
+
+## v6.0 — STUDIO: plataforma multi-agentes (2026-07)
+
+Entrada por **TEMA** (pesquisa na web), não só URL:
+
+```bat
+python studio.py "história do farol de Alexandria" --duration 240
+python studio.py --tts-bench     REM compara motores de voz e escolhe o melhor
+```
+
+Pipeline de agentes (studio/):
+
+| Agente | Faz | Base |
+|---|---|---|
+| Pesquisador | Wikipedia PT/EN + DuckDuckGo + leitura de páginas; Claude valida fatos cruzando fontes e gera base de conhecimento com referências | novo |
+| Copywriter | Roteiro humano (anti-IA), hook forte, open loops, curiosidades, CTA | claude_client + narration_director |
+| Storyboard | Cenas com duração/emoção/ritmo/câmera/tipo de mídia + decisões cinematográficas | editor_ai + scene_analyzer |
+| MediaScout | Expansão de queries (PT+EN+sinônimos+entidades), varredura multi-fonte, dedup, filtro de qualidade, **media_report.json com proveniência** (URL/autor/licença/score 0-100/justificativa) e geração de imagem por IA (Pollinations) como último recurso | visual_asset_engine + openverse/nasa |
+| Narrador | **Benchmark automático** de motores TTS grátis (google Chirp/edge/chatterbox/kokoro/piper) → melhor voz PT-BR; prosódia por segmento + word boundaries reais | studio/tts.py |
+| Música | Trilha por emoção (biblioteca local → Internet Archive) + SFX + ducking | music_engine + sound_design |
+| Editor | Timeline declarativa, auditoria de cobertura, xfade, Ken Burns, legendas, loudnorm; Remotion ou FFmpeg | timeline_builder + video_assembler |
+| SEO | Título/descrição/hashtags/tags + **capítulos com timestamps reais** + thumbnail | publisher_metadata + thumbnail_engine |
+| Revisor | Medições objetivas (sync, mídia repetida, cortes, volumes, legendas, português) e **loop de retrabalho automático** apontando o agente responsável | novo |
+
+Infra: `studio/core.py` (blackboard JobContext + mensagens entre agentes +
+Orchestrator com loop de QA) e `studio/providers.py` (cadeias de fallback —
+se uma API falhar, a próxima assume). Novos agentes: criar classe com
+requires/produces e adicionar à lista do pipeline.
+
+---
+
+## v5.0 — Profissionalização (2026-07)
+
+**Voz e legendas**
+- TTS sintetizado POR SEGMENTO aplicando o `prosody_plan` do Narration
+  Director (rate/pitch por emoção) — `synthesize_narration_directed()`.
+- Word boundaries REAIS do edge-tts (`boundary="WordBoundary"`, obrigatório
+  desde o edge-tts 7.x) → legendas karaokê com timestamps exatos, com
+  pontuação reanexada e blocos que respeitam fronteiras de frase/segmento.
+
+**Vídeo (FFmpeg)**
+- Transições `xfade` reais entre cenas (fade/dissolve/cut do storyboard),
+  preservando a duração total — o áudio nunca desalinha.
+- Loudness normalizado na saída (`loudnorm` -14 LUFS, padrão YouTube/TikTok).
+- Thumbnail renderizada automaticamente (16:9 + 9:16) — `thumbnail_engine.py`.
+- B-roll documental adquirido para overlays do Remotion — `broll_engine.py`.
+- Remotion: cena sem decisão do Editor AI usa fallback neutro (antes: vídeo preto).
+
+**Modo Explainer (estilo NotebookLM)** — `--style explainer [--theme deep|paper|ocean]`
+- Deck de slides didáticos gerado pelo Claude (`explainer_generator.py`),
+  slides PNG via Pillow (`slide_renderer.py`, 3 temas), duração de cada
+  slide ditada pela narração real (`explainer_pipeline.py`).
+
+**Infra**
+- `claude_client.py`: cliente único com retry/backoff exponencial e prompt
+  caching (o JSON da história é cacheado entre roteiro/storyboard/metadados).
+- Código morto removido (image_acquisition_engine, editorial_agent,
+  video_acquisition, tts_engine/Kokoro — o TTS real é o edge-tts).
+
+---
 
 ## Visão Geral
 
@@ -27,10 +87,10 @@ autovideo/
     ├── script_writer.py             ← ETAPA 04: Roteiro com timecodes
     ├── narration_writer.py          ← ETAPA 05: Narração para TTS
     ├── storyboard_generator.py      ← ETAPA 06: Storyboard visual
-    ├── image_acquisition_engine.py  ← ETAPA 07: Busca + download de imagens ★ NOVO
+    ├── visual_asset_engine.py       ← ETAPA 07: Busca + download de ativos visuais
     ├── visual_prompts.py            ← ETAPA 08: Prompts para imagens faltantes
-    ├── timeline_builder.py          ← ETAPA 09: timeline.json + subtitles.srt
-    ├── tts_engine.py                ← ETAPA 10: Kokoro TTS → audio.wav
+    ├── timeline_builder.py          ← ETAPA 09: timeline.json
+    ├── subtitle_engine.py           ← ETAPA 10: edge-tts → audio.wav + legendas word-level
     ├── publisher_metadata.py        ← ETAPA 11: Títulos, hashtags, thumbnail
     └── video_assembler.py           ← ETAPA 12: FFmpeg → final_video.mp4
 ```
@@ -73,7 +133,7 @@ URL YouTube
     │  → cena a cena: descrição visual, ângulo, movimento, legenda
     │  → 06_storyboard.json
     │
-    ▼ ETAPA 07 — image_acquisition_engine.py  ★ NOVO
+    ▼ ETAPA 07 — visual_asset_engine.py
     │  1. Claude API → keywords para TODAS as cenas (1 chamada batch)
     │  2. Busca automática em 3 fontes:
     │     ├─ Wikimedia Commons  (domínio público + licenças livres)
@@ -98,11 +158,9 @@ URL YouTube
     │  → timeline.json
     │  → subtitles.srt
     │
-    ▼ ETAPA 10 — tts_engine.py
-    │  Kokoro TTS — 3 backends em cascata:
-    │  1. kokoro-onnx  (local, offline, qualidade alta)
-    │  2. kokoro PyPI  (alternativo)
-    │  3. edge-tts     (Microsoft Azure PT-BR, online)
+    ▼ ETAPA 10 — subtitle_engine.py
+    │  edge-tts (Microsoft Azure Neural, gratuito) — voz pt-BR-AntonioNeural
+    │  WordBoundary → timestamps por palavra → subtitles.srt/.ass/.json
     │  → audio.wav
     │
     ▼ ETAPA 11 — publisher_metadata.py
@@ -276,22 +334,21 @@ python main.py https://youtu.be/XXXXX --output-dir C:\meus_videos\ep01
 
 | Pacote | Versão | Status | Uso |
 |---|---|---|---|
-| anthropic | ≥0.40 | ❌ instalar | Claude API (etapas 2-6, 8, 11) |
-| yt-dlp | ≥2024 | ✅ instalado | Extração YouTube |
-| youtube-transcript-api | ≥0.6 | ❌ instalar | Transcrição |
-| requests | ≥2.31 | incluso | Image Acquisition |
-| Pillow | ≥10 | ❌ instalar | Conversão JPEG |
-| kokoro-onnx | ≥0.4 | ❌ instalar | TTS principal |
-| edge-tts | ≥6.1 | ❌ instalar | TTS fallback |
-| numpy | ≥1.24 | ✅ instalado | Audio processing |
-| soundfile | ≥0.12 | ❌ instalar | Salvar WAV |
-| onnxruntime | ≥1.23 | ✅ instalado | Kokoro backend |
-| ffmpeg | binário | ❌ instalar | Montagem de vídeo |
+| anthropic | ≥0.40 | Claude API (etapas 2-6, 8, 11) |
+| yt-dlp | ≥2024 | Extração YouTube |
+| youtube-transcript-api | ≥0.6 | Transcrição |
+| requests | ≥2.31 | Image Acquisition |
+| Pillow | ≥10 | Conversão JPEG |
+| edge-tts | ≥6.1 | TTS principal (Azure Neural gratuito, word boundaries) |
+| numpy | ≥1.24 | Audio processing |
+| soundfile | ≥0.12 | Salvar WAV |
+| deep-translator | ≥1.11 | Multi-idioma |
+| ffmpeg | binário | Montagem de vídeo |
 
-### Instalar dependências faltantes
+### Instalar dependências
 
 ```bat
-pip install anthropic youtube-transcript-api requests Pillow kokoro-onnx edge-tts soundfile
+pip install -r requirements.txt
 ```
 
 ### Instalar FFmpeg (Windows)

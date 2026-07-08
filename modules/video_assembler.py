@@ -19,6 +19,23 @@ import subprocess
 from pathlib import Path
 from config import FFMPEG_CRF, FFMPEG_PRESET, OUTPUT_RESOLUTION, FRAME_RATE
 
+# Transições entre cenas (xfade). A duração total é preservada: cada clipe
+# (exceto o último) é renderizado TRANSITION_SEC mais longo e a sobreposição
+# do xfade consome exatamente essa extensão — o áudio nunca desalinha.
+TRANSITION_SEC  = 0.4
+# Limite de cenas para usar xfade (filter_complex único); acima disso, concat
+_XFADE_MAX_SCENES = 80
+
+# Normalização de loudness da saída final (padrão YouTube/TikTok: -14 LUFS)
+LOUDNORM_FILTER = "loudnorm=I=-14:TP=-1.5:LRA=11"
+
+# transição do storyboard/editor → transição xfade do FFmpeg
+_XFADE_MAP = {
+    "fade":     ("fade", TRANSITION_SEC),
+    "dissolve": ("dissolve", TRANSITION_SEC),
+    "cut":      ("fade", 0.07),   # corte "suavizado" imperceptível
+}
+
 
 # ─── Mapeamento emoção → parâmetros de movimento ──────────────────────────────
 _MOTION = {
@@ -56,25 +73,37 @@ def assemble(timeline: dict, output_dir: Path, ffmpeg_exe: str = "ffmpeg") -> st
 
     w, h = OUTPUT_RESOLUTION.split("x")
 
-    # ── 1. Renderiza cada cena ────────────────────────────────────────────────
-    clips = []
-    for scene in scenes:
-        clip = _render_scene(scene, output_dir, w, h, ffmpeg_exe)
+    # ── 1. Renderiza cada cena (estendida p/ a transição, exceto a última) ────
+    use_xfade = 2 <= len(scenes) <= _XFADE_MAX_SCENES
+    clips = []          # [(path, duração_pretendida, cena)]
+    for i, scene in enumerate(scenes):
+        extra = TRANSITION_SEC if (use_xfade and i < len(scenes) - 1) else 0.0
+        clip  = _render_scene(scene, output_dir, w, h, ffmpeg_exe, extra)
         if clip:
-            clips.append(clip)
+            clips.append((clip, float(scene.get("duration", 4.0)), scene))
 
     if not clips:
         print("[assembler] Nenhum clipe gerado.")
         return str(output_video)
 
-    # ── 2. Cria concat_list com paths absolutos ───────────────────────────────
-    with open(concat_list, "w", encoding="utf-8") as f:
-        for c in clips:
-            f.write(f"file '{Path(c).resolve().as_posix()}'\n")
-
+    # ── 2. Funde os clipes: xfade (transições reais) com fallback p/ concat ───
     raw_video = output_dir / "raw_video.mp4"
-    _run([ffmpeg_exe, "-y", "-f", "concat", "-safe", "0",
-          "-i", str(concat_list), "-c", "copy", str(raw_video)])
+    merged = False
+    if use_xfade and len(clips) >= 2:
+        merged = _merge_with_transitions(clips, raw_video, ffmpeg_exe)
+        if merged:
+            print(f"  Transições xfade aplicadas ({len(clips)-1} cortes suaves)")
+
+    if not merged:
+        # Fallback: concat com corte na duração pretendida de cada clipe
+        with open(concat_list, "w", encoding="utf-8") as f:
+            for c, dur, _ in clips:
+                f.write(f"file '{Path(c).resolve().as_posix()}'\n")
+                f.write(f"outpoint {dur:.3f}\n")
+        _run([ffmpeg_exe, "-y", "-f", "concat", "-safe", "0",
+              "-i", str(concat_list),
+              "-c:v", "libx264", "-preset", "fast", "-crf", str(FFMPEG_CRF),
+              "-r", str(FRAME_RATE), str(raw_video)], timeout=600)
 
     if not raw_video.exists():
         print("[assembler] ERRO: raw_video.mp4 não gerado.")
@@ -82,11 +111,12 @@ def assemble(timeline: dict, output_dir: Path, ffmpeg_exe: str = "ffmpeg") -> st
 
     print(f"  Video bruto: {raw_video.stat().st_size // 1024}KB")
 
-    # ── 3. Adiciona áudio + legendas burned-in ────────────────────────────────
+    # ── 3. Adiciona áudio + legendas burned-in + loudness normalizado ─────────
     sub_file   = ass_file if ass_file.exists() else (srt_file if srt_file.exists() else None)
     audio_args = ["-i", str(audio_file)] if audio_file.exists() else []
     map_args   = ["-map", "0:v", "-map", "1:a"] if audio_file.exists() else ["-map", "0:v"]
-    audio_codec= ["-c:a", "aac", "-b:a", "128k"] if audio_file.exists() else []
+    audio_codec = (["-af", LOUDNORM_FILTER, "-c:a", "aac", "-b:a", "192k"]
+                   if audio_file.exists() else [])
 
     vf = _build_final_vf(sub_file, w, h)
 
@@ -121,12 +151,53 @@ def assemble(timeline: dict, output_dir: Path, ffmpeg_exe: str = "ffmpeg") -> st
     return str(output_video)
 
 
+# ─── Fusão com transições xfade ───────────────────────────────────────────────
+
+def _merge_with_transitions(clips: list, raw_video: Path, ffmpeg_exe: str) -> bool:
+    """
+    Funde clipes com xfade encadeado. clips = [(path, duração_pretendida, cena)].
+    Cada clipe (exceto o último) foi renderizado TRANSITION_SEC mais longo;
+    o offset de cada xfade é o início pretendido da cena seguinte, então a
+    duração final = soma exata das durações (áudio permanece em sync).
+    """
+    inputs, filters = [], []
+    for path, _, _ in clips:
+        inputs += ["-i", str(path)]
+
+    offset = 0.0
+    prev_label = "[0:v]"
+    for i in range(1, len(clips)):
+        offset += clips[i - 1][1]                      # início pretendido da cena i
+        scene_next = clips[i][2]
+        trans_name = str(scene_next.get("transition_in", "fade")).lower()
+        trans, tdur = _XFADE_MAP.get(trans_name, ("fade", TRANSITION_SEC))
+        out_label = f"[v{i}]"
+        filters.append(
+            f"{prev_label}[{i}:v]xfade=transition={trans}"
+            f":duration={tdur}:offset={offset:.3f}{out_label}"
+        )
+        prev_label = out_label
+
+    cmd = (
+        [ffmpeg_exe, "-y"] + inputs
+        + ["-filter_complex", ";".join(filters)]
+        + ["-map", prev_label,
+           "-c:v", "libx264", "-preset", "fast", "-crf", str(FFMPEG_CRF),
+           "-r", str(FRAME_RATE), str(raw_video)]
+    )
+    r = _run(cmd, timeout=900)
+    if r != 0 or not raw_video.exists():
+        print("  [assembler] xfade falhou — usando concat simples")
+        return False
+    return True
+
+
 # ─── Renderização de cada cena ────────────────────────────────────────────────
 
 def _render_scene(scene: dict, output_dir: Path, w: str, h: str,
-                  ffmpeg_exe: str) -> str | None:
+                  ffmpeg_exe: str, extra_duration: float = 0.0) -> str | None:
     cid      = scene.get("scene_id", 0)
-    duration = float(scene.get("duration", 4.0))
+    duration = float(scene.get("duration", 4.0)) + extra_duration
     emotion  = scene.get("emotion", "mystery")
     clip     = output_dir / f"clip_{cid:02d}.mp4"
 

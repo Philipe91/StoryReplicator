@@ -42,13 +42,15 @@ BASE DE CONHECIMENTO (fatos já validados — use SOMENTE isto):
 
 Escreva o roteiro narrado de um vídeo de {duration}s (~{target_words} palavras).{qa_extra}
 
-ESTRUTURA OBRIGATÓRIA (retenção):
-1. HOOK (0-5s): a frase mais intrigante possível — pergunta, contradição ou número chocante. Nunca "olá pessoal".
+ESTRUTURA OBRIGATÓRIA (retenção — o algoritmo distribui por tempo de exibição):
+1. HOOK (0-5s): a frase mais intrigante possível — pergunta, contradição ou número chocante. Os primeiros segundos decidem se o espectador fica. Nunca "olá pessoal".
 2. PROMESSA rápida do que a pessoa vai descobrir.
-3. DESENVOLVIMENTO em blocos, cada bloco termina com um gancho para o próximo ("mas isso não foi o pior...").
-4. Use as CURIOSIDADES e NÚMEROS MARCANTES da base espaçados pelo vídeo.
-5. Momento "plot twist" ou revelação no último terço.
-6. Encerramento com reflexão curta + CTA natural (1 frase, sem implorar).
+3. GANCHO ABERTO MESTRE: nos primeiros 30s, abra uma pergunta que SÓ será respondida no penúltimo segmento — o motivo para assistir até o fim.
+4. DESENVOLVIMENTO em blocos: cada bloco TERMINA abrindo uma curiosidade que o próximo responde ("mas isso não foi o pior..."). Bloco sem motivo para continuar assistindo perde retenção.
+5. REENGAJAMENTO a cada bloco: uma pergunta direta ao espectador ou um "preste atenção nisso" para segurar a queda.
+6. Use as CURIOSIDADES e NÚMEROS MARCANTES da base espaçados pelo vídeo.
+7. REVELAÇÃO no último terço: fecha o gancho mestre aberto no início.
+8. CTA de inscrição NO MOMENTO DE MAIOR VALOR (logo após a revelação — não no fim, quando o espectador já saiu) + encerramento com reflexão curta.
 
 ESTILO ANTI-IA (obrigatório):
 - Frases curtas misturadas com médias. Ritmo de fala, não de texto.
@@ -67,8 +69,8 @@ Retorne APENAS este JSON:
     {{"id": "bloco_2", "text": "..."}},
     {{"id": "bloco_3", "text": "..."}},
     {{"id": "revelacao", "text": "..."}},
-    {{"id": "encerramento", "text": "..."}},
-    {{"id": "cta", "text": "..."}}
+    {{"id": "cta", "text": "..."}},
+    {{"id": "encerramento", "text": "..."}}
   ]
 }}"""
         script = ask_json(prompt, max_tokens=6000, fallback={"segments": []})

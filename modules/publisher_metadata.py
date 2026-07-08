@@ -8,10 +8,20 @@ METADATA_PROMPT = """Você é um especialista em SEO e growth hacking para YouTu
 Baseado na HISTÓRIA fornecida no contexto do sistema,
 crie metadados completos de publicação para maximizar o alcance viral.
 
+TÉCNICA DE CTR (obrigatória):
+- Gere 8 variantes de título usando estruturas DIFERENTES: resultado específico,
+  pergunta, contraste, número, promessa e curiosidade. Ranqueie da maior para a
+  menor chance de clique. A variante nº 1 vira o título principal.
+- Título e thumbnail trabalham JUNTOS e nunca repetem a mesma informação:
+  um cria a pergunta, o outro amplia a curiosidade.
+
 Retorne um JSON com esta estrutura exata:
 {{
+  "titulos_variantes_ctr": [
+    {{"titulo": "...", "estrutura": "pergunta|numero|contraste|promessa|curiosidade|resultado", "rank": 1}}
+  ],
   "titulos": {{
-    "youtube_shorts": "Título YouTube Shorts (máx 70 chars, gancho forte)",
+    "youtube_shorts": "A variante rank 1 (máx 70 chars, gancho forte)",
     "tiktok": "Título TikTok (máx 60 chars, trendy)",
     "instagram_reels": "Título Instagram Reels (máx 60 chars)",
     "facebook_reels": "Título Facebook Reels (máx 70 chars)"
@@ -30,8 +40,10 @@ Retorne um JSON com esta estrutura exata:
   "thumbnail": {{
     "prompt_principal": "Prompt detalhado em inglês para gerar thumbnail 1280x720...",
     "prompt_negativo": "texto, palavras, cartoon, anime...",
-    "texto_sobreposicao": "Texto para adicionar na thumbnail (máx 5 palavras, impactante)",
+    "elemento_central": "O elemento visual central da imagem",
+    "texto_sobreposicao": "Texto de destaque (MÁX 4 palavras, NUNCA repete o título — amplia a curiosidade dele)",
     "cor_dominante": "cor hex sugerida para o texto",
+    "paleta": "paleta de cores que se destaca no feed",
     "estilo": "thumbnail estilo YouTube drama"
   }},
   "hooks_variantes": [

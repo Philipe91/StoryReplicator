@@ -29,7 +29,10 @@ _STROKE_COLOR  = (0, 0, 0)
 def generate_thumbnails(timeline: dict, metadata: dict, output_dir) -> list:
     """
     Gera thumbnail.jpg (16:9) e thumbnail_vertical.jpg (9:16).
-    Retorna lista de paths gerados (vazia se não houver imagem-fonte/Pillow).
+    v6.4: tenta primeiro uma IMAGEM GERADA POR IA com composição dramática
+    (SDXL local na GPU → FLUX via Pollinations) a partir do prompt do agente
+    SEO — estilo canal grande, não "frame + texto". Fallback: melhor frame.
+    Retorna lista de paths gerados.
     """
     output_dir = Path(output_dir)
     try:
@@ -38,7 +41,8 @@ def generate_thumbnails(timeline: dict, metadata: dict, output_dir) -> list:
         print("  [thumbnail] Pillow não instalado — pulando")
         return []
 
-    src = _pick_source_image(timeline, output_dir)
+    src = _generate_ai_source(metadata, output_dir) \
+        or _pick_source_image(timeline, output_dir)
     if not src:
         print("  [thumbnail] nenhuma imagem-fonte disponível — pulando")
         return []
@@ -57,6 +61,44 @@ def generate_thumbnails(timeline: dict, metadata: dict, output_dir) -> list:
         except Exception as e:
             print(f"  [thumbnail] erro em {name}: {e}")
     return generated
+
+
+def _generate_ai_source(metadata: dict, output_dir: Path):
+    """
+    Fundo dramático gerado por IA a partir do prompt_principal do SEO.
+    Cadeia: SDXL-Lightning local (GPU) → Pollinations FLUX (API grátis).
+    """
+    thumb_md = metadata.get("thumbnail") or {}
+    prompt = thumb_md.get("prompt_principal", "")
+    if not prompt:
+        return None
+    prompt = (f"{prompt}, dramatic cinematic lighting, high contrast, "
+              f"YouTube thumbnail composition, single striking subject, "
+              f"shallow depth of field, no text")
+    dest = output_dir / "thumbnail_ai_source.jpg"
+
+    try:
+        from modules.local_image_gen import available as gpu_ok, generate as gpu_gen
+        if gpu_ok() and gpu_gen(prompt, dest, width=1280, height=720):
+            print("  [thumbnail] fundo gerado na GPU (SDXL-Lightning)")
+            return dest
+    except Exception:
+        pass
+
+    try:
+        import urllib.parse
+        import requests
+        url = ("https://image.pollinations.ai/prompt/"
+               + urllib.parse.quote(prompt[:300])
+               + "?width=1280&height=720&nologo=true&model=flux")
+        r = requests.get(url, timeout=120)
+        if r.status_code == 200 and len(r.content) > 20_000:
+            dest.write_bytes(r.content)
+            print("  [thumbnail] fundo gerado via FLUX (Pollinations)")
+            return dest
+    except Exception:
+        pass
+    return None
 
 
 def _pick_source_image(timeline: dict, output_dir: Path):

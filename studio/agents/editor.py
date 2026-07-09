@@ -33,11 +33,26 @@ class EditorAgent(Agent):
         if notes:
             print(f"  Notas do QA: {[n['note'][:60] for n in notes]}")
 
+        # ── v6.4: voz normalizada + cena cortada NA PALAVRA exata ────────────
+        from modules.scene_sync import align_scenes_to_speech, apply_rhythm_transitions
+        audio = workdir / "audio.wav"
+        boundaries = ctx.get("word_boundaries", [])
+        storyboard = dict(ctx.get("storyboard"))
+
+        if boundaries and audio.exists():
+            audio_dur = boundaries[-1]["end"] + 0.6
+            cenas, n_ok = align_scenes_to_speech(
+                storyboard.get("cenas", []), boundaries, audio_dur)
+            cenas = apply_rhythm_transitions(cenas, ctx.get("edit_decisions", []))
+            storyboard["cenas"] = cenas
+            print(f"  Sync fala↔imagem: {n_ok}/{len(cenas)} cenas cortadas "
+                  f"na palavra exata (word boundaries)")
+
         # ── Timeline declarativa ──────────────────────────────────────────────
         mode_like = {"label": f"studio-{ctx.config.get('duration', 180)}s",
                      "duration": int(ctx.config.get("duration", 180))}
         timeline = build_timeline(
-            ctx.get("storyboard"), ctx.get("narration"),
+            storyboard, ctx.get("narration"),
             {"prompts": []}, mode_like,
             ctx.get("image_assignments"), ctx.get("video_assignments", {}),
         )
@@ -90,3 +105,4 @@ class EditorAgent(Agent):
 
         ctx.set("timeline", timeline, self.name)
         ctx.set("video_path", str(video_path), self.name)
+

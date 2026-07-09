@@ -108,16 +108,21 @@ class MediaScoutAgent(Agent):
                    + "?width=1080&height=1920&nologo=true&model=flux")
             try:
                 content = None
+                dest = assets_dir / f"image_{cid:02d}.jpg"
                 r = _rq.get(url, timeout=120)
                 if r.status_code == 200 and len(r.content) > 20_000:
                     content = r.content
-                else:
-                    # Fallback: Stable Horde (grátis, fila voluntária)
+                if content is None:
+                    # Fallback 2: SDXL-Lightning local (só se houver GPU CUDA)
+                    from modules.local_image_gen import generate as gpu_generate
+                    if gpu_generate(prompt, dest):
+                        content = dest.read_bytes()
+                if content is None:
+                    # Fallback 3: Stable Horde (grátis, fila voluntária)
                     from modules.asset_providers import stablehorde_generate
                     from modules.request_manager import ThrottledSession
                     content = stablehorde_generate(ThrottledSession(), prompt)
                 if content and len(content) > 20_000:
-                    dest = assets_dir / f"image_{cid:02d}.jpg"
                     dest.write_bytes(content)
                     image_assign[cid] = f"assets/image_{cid:02d}.jpg"
                     result["assignments"][cid] = {

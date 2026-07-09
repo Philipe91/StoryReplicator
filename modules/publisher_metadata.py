@@ -27,9 +27,9 @@ Retorne um JSON com esta estrutura exata:
     "facebook_reels": "Título Facebook Reels (máx 70 chars)"
   }},
   "descricao": {{
-    "completa": "Descrição de 150-200 palavras com keywords...",
+    "completa": "REGRAS: (1) as DUAS primeiras linhas são o gancho — aparecem antes do 'ver mais' e decidem o clique: abra com a pergunta/contradição mais forte do vídeo, NUNCA com 'Neste vídeo...'; (2) repita a keyword principal 2-3x de forma natural ao longo do texto; (3) 150-200 palavras; (4) termine com 1 CTA curto (inscrever/comentar); (5) tom de curiosidade, não de resumo.",
     "curta": "Descrição de 50 palavras para mobile...",
-    "gancho": "Primeira linha que aparece antes do 'ver mais' (máx 125 chars)"
+    "gancho": "Primeira linha antes do 'ver mais' (máx 125 chars, a mais clicável possível)"
   }},
   "hashtags": {{
     "principais": ["#hashtag1", "#hashtag2"],

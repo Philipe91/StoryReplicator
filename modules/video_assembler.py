@@ -171,6 +171,8 @@ def _merge_with_transitions(clips: list, raw_video: Path, ffmpeg_exe: str) -> bo
         scene_next = clips[i][2]
         trans_name = str(scene_next.get("transition_in", "fade")).lower()
         trans, tdur = _XFADE_MAP.get(trans_name, ("fade", TRANSITION_SEC))
+        # v6.4: duração de transição por RITMO da cena (scene_sync), se presente
+        tdur = min(float(scene_next.get("transition_duration", tdur)), TRANSITION_SEC)
         out_label = f"[v{i}]"
         filters.append(
             f"{prev_label}[{i}:v]xfade=transition={trans}"

@@ -64,6 +64,8 @@ validation/quick_video_test.py
 key.txt
 keys.txt
 *.secret
+client_secrets.json
+youtube_token.json
 
 # Modelos de TTS locais (grandes demais p/ GitHub — baixados na instalação)
 *.onnx

@@ -51,5 +51,22 @@ class NarratorAgent(Agent):
         print(f"  Motor usado: {used} | Segmentos c/ prosódia: {n_segs} | "
               f"Word boundaries: {len(boundaries)}")
 
+        # Volume esperto: voz normalizada para -16 LUFS ANTES da música/SFX —
+        # a mixagem parte de uma base consistente (saída final = -14 LUFS)
+        self._normalize_voice(Path(wav), ffmpeg)
+
         ctx.set("word_boundaries", boundaries, self.name)
         ctx.set("tts_engine", used, self.name)
+
+    @staticmethod
+    def _normalize_voice(audio: Path, ffmpeg: str) -> None:
+        import subprocess
+        tmp = audio.with_name("audio_norm.wav")
+        r = subprocess.run(
+            [ffmpeg, "-y", "-i", str(audio),
+             "-af", "loudnorm=I=-16:TP=-1.5:LRA=9",
+             "-ar", "24000", str(tmp)],
+            capture_output=True, timeout=300)
+        if r.returncode == 0 and tmp.exists() and tmp.stat().st_size > 1000:
+            tmp.replace(audio)
+            print("  Voz normalizada para -16 LUFS")

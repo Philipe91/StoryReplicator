@@ -71,5 +71,22 @@ class EditorAgent(Agent):
             print("  Renderer: FFmpeg (xfade + Ken Burns + legendas + loudnorm)")
             video_path = ffmpeg_assemble(timeline, workdir, ffmpeg_exe=ffmpeg)
 
+        # ── Motion design (HyperFrames): cards animados sincronizados à voz ──
+        if video_path and ctx.config.get("motion_design", True):
+            try:
+                from modules.motion_design import apply_motion_design
+                print("  Motion design (HyperFrames): desenhando cards...")
+                enhanced = apply_motion_design(
+                    video_path, ctx.get("narration", {}),
+                    ctx.get("word_boundaries", []), workdir, ffmpeg=ffmpeg)
+                if enhanced:
+                    video_path = enhanced
+                    print(f"  Overlays aplicados: {Path(enhanced).name} "
+                          f"(original em final_video_plain.mp4)")
+                else:
+                    print("  Motion design falhou — mantendo vídeo sem overlays")
+            except Exception as e:
+                print(f"  [motion] {e} — mantendo vídeo sem overlays")
+
         ctx.set("timeline", timeline, self.name)
         ctx.set("video_path", str(video_path), self.name)

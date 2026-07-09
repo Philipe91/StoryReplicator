@@ -39,6 +39,8 @@ def main():
                         help="Gerar tudo menos o render final")
     parser.add_argument("--skip-video-search", action="store_true",
                         help="Só imagens (sem busca de vídeo)")
+    parser.add_argument("--no-motion", action="store_true",
+                        help="Desliga a camada de motion design (HyperFrames)")
     parser.add_argument("--tts-bench", action="store_true",
                         help="Rodar apenas o benchmark de motores TTS e sair")
     parser.add_argument("--qa-rounds", type=int, default=2,
@@ -97,6 +99,7 @@ def main():
             "ffmpeg":            ffmpeg,
             "skip_video":        args.skip_video,
             "skip_video_search": args.skip_video_search,
+            "motion_design":     not args.no_motion,
         },
     )
 

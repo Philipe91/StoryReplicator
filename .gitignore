@@ -75,3 +75,8 @@ tts_benchmark.json
 
 # Biblioteca de música local (baixada pelo usuário)
 music_library/
+
+# Node / HyperFrames (reinstalável: npm install + npx skills add heygen-com/hyperframes)
+node_modules/
+.agents/
+videos/

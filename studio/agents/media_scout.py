@@ -105,12 +105,20 @@ class MediaScoutAgent(Agent):
             import urllib.parse
             url = ("https://image.pollinations.ai/prompt/"
                    + urllib.parse.quote(prompt[:300])
-                   + "?width=1080&height=1920&nologo=true")
+                   + "?width=1080&height=1920&nologo=true&model=flux")
             try:
-                r = _rq.get(url, timeout=90)
+                content = None
+                r = _rq.get(url, timeout=120)
                 if r.status_code == 200 and len(r.content) > 20_000:
+                    content = r.content
+                else:
+                    # Fallback: Stable Horde (grátis, fila voluntária)
+                    from modules.asset_providers import stablehorde_generate
+                    from modules.request_manager import ThrottledSession
+                    content = stablehorde_generate(ThrottledSession(), prompt)
+                if content and len(content) > 20_000:
                     dest = assets_dir / f"image_{cid:02d}.jpg"
-                    dest.write_bytes(r.content)
+                    dest.write_bytes(content)
                     image_assign[cid] = f"assets/image_{cid:02d}.jpg"
                     result["assignments"][cid] = {
                         "cena_id": cid, "status": "found", "asset_type": "image",

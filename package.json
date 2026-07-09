@@ -1,0 +1,8 @@
+{
+  "name": "storyreplicator",
+  "private": true,
+  "description": "Dependências Node do StoryReplicator (HyperFrames = camada de motion design)",
+  "dependencies": {
+    "hyperframes": "latest"
+  }
+}

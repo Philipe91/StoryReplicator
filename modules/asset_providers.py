@@ -177,13 +177,14 @@ def pollinations_generate(session, prompt: str, width: int = 1080,
                           height: int = 1920) -> "VisualAsset | None":
     """
     Gera uma imagem via Pollinations.ai (grátis, sem chave, rate-limit por IP).
-    Usado SOMENTE quando a busca em todas as fontes reais falhou.
+    model=flux → FLUX servidor-side, o estado da arte open-source, sem custo
+    e sem usar a CPU local. Usado SOMENTE quando a busca real falhou.
     """
     import urllib.parse
     try:
         url = ("https://image.pollinations.ai/prompt/"
                + urllib.parse.quote(prompt[:300])
-               + f"?width={width}&height={height}&nologo=true")
+               + f"?width={width}&height={height}&nologo=true&model=flux")
         return VisualAsset(
             url=url,
             title=f"AI generated: {prompt[:80]}",
@@ -191,11 +192,54 @@ def pollinations_generate(session, prompt: str, width: int = 1080,
             asset_type="image",
             category="image_complement",
             width=width, height=height,
-            source="pollinations-ai",
-            license="AI generated (Pollinations)",
+            source="pollinations-flux",
+            license="AI generated (Pollinations/FLUX)",
         )
     except Exception:
         return None
+
+
+def stablehorde_generate(session, prompt: str, width: int = 1024,
+                         height: int = 1536, timeout_s: int = 180) -> bytes | None:
+    """
+    Fallback de geração: Stable Horde (rede voluntária, 100% grátis, chave
+    anônima). Lento (fila por kudos) — usar apenas quando o Pollinations
+    falhar. Retorna os bytes da imagem ou None.
+    """
+    import base64
+    import time as _t
+    try:
+        r = session.post(
+            "https://stablehorde.net/api/v2/generate/async",
+            headers={"apikey": "0000000000", "Client-Agent": "StoryReplicator:6:local"},
+            json={"prompt": prompt[:500],
+                  "params": {"width": width - width % 64,
+                             "height": height - height % 64,
+                             "steps": 20, "n": 1}},
+            timeout=30,
+        )
+        if r.status_code not in (200, 202):
+            return None
+        job = r.json().get("id")
+        deadline = _t.time() + timeout_s
+        while _t.time() < deadline:
+            _t.sleep(8)
+            s = session.get(f"https://stablehorde.net/api/v2/generate/status/{job}",
+                            timeout=20)
+            data = s.json()
+            if data.get("done"):
+                gens = data.get("generations", [])
+                if not gens:
+                    return None
+                img = gens[0].get("img", "")
+                if img.startswith("http"):
+                    return session.get(img, timeout=60).content
+                return base64.b64decode(img)
+            if data.get("faulted"):
+                return None
+    except Exception:
+        pass
+    return None
 
 
 # ─── Internet Archive ──────────────────────────────────────────────────────────

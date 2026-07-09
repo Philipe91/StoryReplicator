@@ -77,6 +77,13 @@ Retorne APENAS este JSON:
                               system=story_system(pseudo_story),
                               fallback={"cenas": []})
         if not storyboard.get("cenas"):
+            print("  Storyboard vazio — tentando de novo (retry 1/1)...")
+            storyboard = ask_json(prompt, max_tokens=8000,
+                                  fallback={"cenas": []})
+        if not storyboard.get("cenas"):
+            print("  LLM falhou 2x — usando storyboard heurístico (fallback)")
+            storyboard = self._heuristic_storyboard(narration, kb, duration)
+        if not storyboard.get("cenas"):
             raise RuntimeError("Storyboard vazio.")
         storyboard["total_cenas"] = len(storyboard["cenas"])
         storyboard["duracao_total"] = duration
@@ -96,6 +103,48 @@ Retorne APENAS este JSON:
         ctx.set("scene_contexts", contexts, self.name)
         ctx.set("pseudo_story", pseudo_story, self.name)
         _save(ctx, "04_storyboard.json", storyboard)
+
+
+    @staticmethod
+    def _heuristic_storyboard(narration: dict, kb: dict, duration: int) -> dict:
+        """
+        Fallback sem LLM: 1-2 cenas por segmento da narração, dividindo por
+        frases. descricao_visual = entidades do tema + frase (o MediaScout
+        expande as queries depois; a busca ainda funciona).
+        """
+        import re
+        ents = kb.get("entidades", {})
+        base_terms = " ".join((ents.get("locais") or [])[:1]
+                              + (ents.get("objetos") or [])[:1]
+                              + (ents.get("datas_chave") or [])[:1])
+        seg_emotion = {"hook": "mystery", "promessa": "curiosity",
+                       "revelacao": "revelation", "cta": "static",
+                       "encerramento": "contemplation"}
+        cenas, cid = [], 0
+        for seg in narration.get("segments", []):
+            frases = [f.strip() for f in
+                      re.split(r"(?<=[.!?])\s+", seg.get("text", "")) if f.strip()]
+            # agrupa em blocos de ~2 frases
+            for i in range(0, len(frases), 2):
+                cid += 1
+                trecho = " ".join(frases[i:i + 2])
+                cenas.append({
+                    "cena_id": cid,
+                    "segmento": seg.get("id", ""),
+                    "duracao": 5.0,
+                    "emotion": seg_emotion.get(seg.get("id", ""), "tension"),
+                    "ritmo": "medium",
+                    "narracao": trecho,
+                    "descricao_visual": f"{base_terms} {trecho[:60]}".strip(),
+                    "tipo_visual": "photograph",
+                    "movimento_camera": "zoom in" if cid % 2 else "pan right",
+                    "legenda": " ".join(trecho.split()[:5]),
+                    "transicao_entrada": "fade",
+                    "transicao_saida": "fade",
+                    "precisa_animacao": False,
+                })
+        return {"cenas": cenas, "total_cenas": len(cenas),
+                "duracao_total": duration, "fallback": "heuristic"}
 
 
 def _save(ctx, name: str, data: dict) -> None:

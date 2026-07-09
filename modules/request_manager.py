@@ -38,12 +38,35 @@ _BASE_BACKOFF  = 1.5     # segundos (cresce exponencialmente)
 _COOLDOWN_429  = 30.0    # domínio em cooldown após 429/503
 
 
+# Circuit breaker: após N cooldowns seguidos, o domínio é considerado
+# esgotado e todo request falha INSTANTANEAMENTE por _BREAKER_REST segundos —
+# evita moer dezenas de minutos em retries quando o provider nos limitou.
+_BREAKER_TRIPS = 8
+_BREAKER_REST  = 600.0
+
+
 class _GlobalThrottle:
     """Throttle por domínio, compartilhado entre todas as sessions (thread-safe)."""
     def __init__(self):
         self._last = {}        # domínio → timestamp do último request
         self._cooldown = {}    # domínio → timestamp até quando está em cooldown
+        self._trips = {}       # domínio → nº de cooldowns consecutivos
         self._lock = threading.Lock()
+
+    def trip(self, domain: str) -> None:
+        with self._lock:
+            self._trips[domain] = self._trips.get(domain, 0) + 1
+            if self._trips[domain] >= _BREAKER_TRIPS:
+                self._cooldown[domain] = time.monotonic() + _BREAKER_REST
+
+    def reset_trips(self, domain: str) -> None:
+        with self._lock:
+            self._trips[domain] = 0
+
+    def is_broken(self, domain: str) -> bool:
+        with self._lock:
+            return (self._trips.get(domain, 0) >= _BREAKER_TRIPS
+                    and time.monotonic() < self._cooldown.get(domain, 0))
 
     def wait(self, domain: str) -> None:
         interval = _DOMAIN_MIN_INTERVAL.get(domain, _DOMAIN_MIN_INTERVAL["_default"])
@@ -85,6 +108,15 @@ class ThrottledSession(requests.Session):
         kwargs.setdefault("timeout", 15)
         last_exc = None
 
+        # Circuit breaker: domínio esgotado → falha instantânea (sem moer)
+        if _THROTTLE.is_broken(domain):
+            fake = requests.Response()
+            fake.status_code = 599
+            fake._content = b""
+            fake.url = url
+            fake.reason = "circuit-breaker: domínio em descanso (429s demais)"
+            return fake
+
         for attempt in range(_MAX_RETRIES):
             _THROTTLE.wait(domain)
             try:
@@ -92,9 +124,11 @@ class ThrottledSession(requests.Session):
                 # Rate-limit / indisponível → cooldown + retry
                 if resp.status_code in (429, 503):
                     _THROTTLE.cooldown(domain)
+                    _THROTTLE.trip(domain)
                     self._backoff(attempt)
                     last_exc = f"HTTP {resp.status_code}"
                     continue
+                _THROTTLE.reset_trips(domain)
                 return resp
             except (requests.Timeout, requests.ConnectionError) as e:
                 last_exc = e

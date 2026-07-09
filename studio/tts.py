@@ -129,9 +129,15 @@ def _synth_qwen3(text: str, out_wav: Path, ffmpeg: str = "ffmpeg") -> None:
     import soundfile as sf
     from qwen_tts import Qwen3TTSModel
     if _qwen3_model is None:
-        _qwen3_model = Qwen3TTSModel.from_pretrained(
-            "Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice",
-            device_map="cpu", dtype=torch.float32)
+        # Detecção em runtime: GPU (bf16) quando houver, senão CPU (fp32)
+        if torch.cuda.is_available():
+            _qwen3_model = Qwen3TTSModel.from_pretrained(
+                "Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice",
+                device_map="cuda:0", dtype=torch.bfloat16)
+        else:
+            _qwen3_model = Qwen3TTSModel.from_pretrained(
+                "Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice",
+                device_map="cpu", dtype=torch.float32)
     wavs, sr = _qwen3_model.generate_custom_voice(
         text=text,
         language="Portuguese",
